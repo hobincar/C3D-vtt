@@ -45,8 +45,9 @@ flags.DEFINE_integer('max_steps', 5000, 'Number of steps to run trainer.')
 flags.DEFINE_integer('batch_size', 10, 'Batch size.')
 FLAGS = flags.FLAGS
 MOVING_AVERAGE_DECAY = 0.9999
-MODEL_SAVE_DPATH = './models'
-LOG_DPATH =  "./visual_logs/friends_balanced-1000/sigmoid_loss"
+MODEL_TAG = "friends_balanced-1000"
+MODEL_SAVE_DPATH = './models/{}'.format(MODEL_TAG)
+LOG_DPATH =  "./visual_logs/{}".format(MODEL_TAG)
 TRAIN_DATA_FPATH = "./list/friends_train_balanced-1000.list"
 TEST_DATA_FPATH = "./list/friends_test_balanced-1000.list"
 
@@ -190,8 +191,7 @@ def run_training():
     # Tell TensorFlow that the model will be built into the default Graph.
 
     # Create model directory
-    if not os.path.exists(MODEL_SAVE_DPATH):
-        os.makedirs(MODEL_SAVE_DPATH)
+    os.makedirs(MODEL_SAVE_DPATH, exist_ok=True)
     use_pretrained_model = True 
     model_filename = "./sports1m_finetuning_ucf101.model"
 
@@ -289,7 +289,6 @@ def run_training():
         variable_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY)
         variables_averages_op = variable_averages.apply(tf.trainable_variables())
         train_op = tf.group(apply_gradient_op1, apply_gradient_op2, variables_averages_op)
-        null_op = tf.no_op()
 
         # Create a saver for writing training checkpoints.
         saver = tf.train.Saver(list(weights.values()) + list(biases.values()))
@@ -315,7 +314,7 @@ def run_training():
         test_logger = Logger("{}/test/{}".format(LOG_DPATH, timestamp))
 
         train_start_pos = 0
-        val_start_pos = 0
+        test_start_pos = 0
         for step in range(FLAGS.max_steps):
             train_clips, train_labels, train_start_pos, train_metadata = input_data.read_clip_and_label(
                 metadata_fpath=TRAIN_DATA_FPATH,
@@ -325,40 +324,46 @@ def run_training():
                 crop_size=c3d_model.CROP_SIZE,
                 shuffle=False,
             )
-            summary, preds, acc = sess.run(
+            sess.run(train_op, feed_dict={
+                images_placeholder: train_clips,
+                labels_placeholder: train_labels
+            })
+            if (step) % 10 == 0 or (step + 1) == FLAGS.max_steps:
+                saver.save(sess, os.path.join(MODEL_SAVE_DPATH, 'c3d_friends_model'), global_step=step)
+
+                summary, preds, acc = sess.run(
                     [merged, logits, accuracy],
                     feed_dict={
                         images_placeholder: train_clips,
                         labels_placeholder: train_labels,
                     }
                 )
-            print("accuracy: " + "{:.5f}".format(acc))
-            # train_writer.add_summary(summary, step)
-            train_logger.scalar_summary("accuracy", acc, step)
-            pred_summary = pred_real_to_table(preds, train_labels)
-            train_logger.text_summary("prediction", pred_summary, step)
-
-            print('Validation Data Eval: ', end="")
-            val_clips, val_labels, val_start_pos, val_metadata = input_data.read_clip_and_label(
-                metadata_fpath=TEST_DATA_FPATH,
-                batch_size=FLAGS.batch_size * N_GPU,
-                start_pos=val_start_pos,
-                num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
-                crop_size=c3d_model.CROP_SIZE,
-                shuffle=False,
-            )
-            summary, preds, acc = sess.run(
-                [merged, logits, accuracy],
-                feed_dict={
-                    images_placeholder: val_clips,
-                    labels_placeholder: val_labels,
-                }
-            )
-            print("accuracy: " + "{:.5f}".format(acc))
-            # test_writer.add_summary(summary, step)
-            test_logger.scalar_summary("accuracy", acc, step)
-            pred_summary = pred_real_to_table(preds, val_labels)
-            test_logger.text_summary("prediction", pred_summary, step)
+                print("Train acc.: {:.5f}".format(acc), end="")
+                # train_writer.add_summary(summary, step)
+                train_logger.scalar_summary("accuracy", acc, step)
+                pred_summary = pred_real_to_table(preds, train_labels)
+                train_logger.text_summary("prediction", pred_summary, step)
+    
+                test_clips, test_labels, test_start_pos, test_metadata = input_data.read_clip_and_label(
+                    metadata_fpath=TEST_DATA_FPATH,
+                    batch_size=FLAGS.batch_size * N_GPU,
+                    start_pos=test_start_pos,
+                    num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
+                    crop_size=c3d_model.CROP_SIZE,
+                    shuffle=False,
+                )
+                summary, preds, acc = sess.run(
+                    [merged, logits, accuracy],
+                    feed_dict={
+                        images_placeholder: test_clips,
+                        labels_placeholder: test_labels,
+                    }
+                )
+                print("\tTest acc.: {:.5f}".format(acc))
+                # test_writer.add_summary(summary, step)
+                test_logger.scalar_summary("accuracy", acc, step)
+                pred_summary = pred_real_to_table(preds, test_labels)
+                test_logger.text_summary("prediction", pred_summary, step)
     print("done")
 
 def main(_):

@@ -244,7 +244,7 @@ def list_video_action():
         train_video_actions = "\n".join(train_video_action_list)
         fout.write(train_video_actions)
     np.random.shuffle(val_video_action_list)
-    with open("list/friends_val_balanced-{}.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
+    with open("list/friends_test_balanced-{}.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
         val_video_actions = "\n".join(val_video_action_list)
         fout.write(val_video_actions)
 
