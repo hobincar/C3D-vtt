@@ -23,7 +23,7 @@ forward to make predictions.
 import tensorflow as tf
 
 # The UCF-101 dataset has 101 classes
-NUM_CLASSES = 101
+NUM_CLASSES = 30
 
 # Images are cropped to (CROP_SIZE, CROP_SIZE)
 CROP_SIZE = 112
@@ -90,4 +90,5 @@ def inference_c3d(_X, _dropout, batch_size, _weights, _biases):
   # Output: class prediction
   out = tf.matmul(dense2, _weights['out']) + _biases['out']
 
-  return out
+  return out, dense2
+

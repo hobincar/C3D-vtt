@@ -19,88 +19,83 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow as tf
-import PIL.Image as Image
 import random
-import numpy as np
-import cv2
 import time
 
-def get_frames_data(filename, num_frames_per_clip=16):
-  ''' Given a directory containing extracted frames, return a video clip of
-  (num_frames_per_clip) consecutive frames as a list of np arrays '''
-  ret_arr = []
-  s_index = 0
-  for parent, dirnames, filenames in os.walk(filename):
-    if(len(filenames)<num_frames_per_clip):
-      return [], s_index
-    filenames = sorted(filenames)
-    s_index = random.randint(0, len(filenames) - num_frames_per_clip)
-    for i in range(s_index, s_index + num_frames_per_clip):
-      image_name = str(filename) + '/' + str(filenames[i])
-      img = Image.open(image_name)
-      img_data = np.array(img)
-      ret_arr.append(img_data)
-  return ret_arr, s_index
+import tensorflow as tf
+import PIL.Image as Image
+import numpy as np
+import cv2
+import parse
+from tqdm import tqdm
 
-def read_clip_and_label(filename, batch_size, start_pos=-1, num_frames_per_clip=16, crop_size=112, shuffle=False):
-  lines = open(filename,'r')
-  read_dirnames = []
-  data = []
-  label = []
-  batch_index = 0
-  next_batch_start = -1
-  lines = list(lines)
-  np_mean = np.load('crop_mean.npy').reshape([num_frames_per_clip, crop_size, crop_size, 3])
-  # Forcing shuffle, if start_pos is not specified
-  if start_pos < 0:
-    shuffle = True
-  if shuffle:
-    video_indices = range(len(lines))
-    random.seed(time.time())
-    random.shuffle(video_indices)
-  else:
-    # Process videos sequentially
-    video_indices = range(start_pos, len(lines))
-  for index in video_indices:
-    if(batch_index>=batch_size):
-      next_batch_start = index
-      break
-    line = lines[index].strip('\n').split()
-    dirname = line[0]
-    tmp_label = line[1]
-    if not shuffle:
-      print("Loading a video clip from {}...".format(dirname))
-    tmp_data, _ = get_frames_data(dirname, num_frames_per_clip)
-    img_datas = [];
-    if(len(tmp_data)!=0):
-      for j in xrange(len(tmp_data)):
-        img = Image.fromarray(tmp_data[j].astype(np.uint8))
-        if(img.width>img.height):
-          scale = float(crop_size)/float(img.height)
-          img = np.array(cv2.resize(np.array(img),(int(img.width * scale + 1), crop_size))).astype(np.float32)
+import c3d_model
+
+
+def read_frame(frame_fpath, crop_size, crop_mean):
+    frame = Image.open(frame_fpath)
+    np_frame = np.array(frame)
+
+    # img = Image.fromarray(frame_data.astype(np.uint8))
+    if frame.width > frame.height:
+        scale = crop_size / frame.height
+        img = np.array(cv2.resize(np_frame, (int(frame.width * scale + 1), crop_size))).astype(np.float32)
+    else:
+        scale = crop_size / frame.width
+        img = np.array(cv2.resize(np_frame, (crop_size, int(img.height * scale + 1)))).astype(np.float32)
+
+    img = img[np.int((img.shape[0] - crop_size)/2):np.int((img.shape[0] - crop_size)/2) + crop_size,
+              np.int((img.shape[1] - crop_size)/2):np.int((img.shape[1] - crop_size)/2) + crop_size,:] - crop_mean
+
+    return img
+
+
+def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP, crop_size=c3d_model.CROP_SIZE, shuffle=False):
+    with open(metadata_fpath, 'r') as fin:
+        rows = list(fin)
+        start_pos = start_pos % len(rows)
+        if start_pos == -1 or shuffle:
+            np.random.seed(seed=42)
+            np.random.shuffle(rows)
+            rows = rows[:batch_size]
         else:
-          scale = float(crop_size)/float(img.width)
-          img = np.array(cv2.resize(np.array(img),(crop_size, int(img.height * scale + 1)))).astype(np.float32)
-        crop_x = int((img.shape[0] - crop_size)/2)
-        crop_y = int((img.shape[1] - crop_size)/2)
-        img = img[crop_x:crop_x+crop_size, crop_y:crop_y+crop_size,:] - np_mean[j]
-        img_datas.append(img)
-      data.append(img_datas)
-      label.append(int(tmp_label))
-      batch_index = batch_index + 1
-      read_dirnames.append(dirname)
+            rows = rows[start_pos:start_pos+batch_size]
+        metadata = [ row.strip("\n").split() for row in rows ]
+    next_start_pos = start_pos + len(metadata)
 
-  # pad (duplicate) data/label if less than batch_size
-  valid_len = len(data)
-  pad_len = batch_size - valid_len
-  if pad_len:
-    for i in range(pad_len):
-      data.append(img_datas)
-      label.append(int(tmp_label))
 
-  np_arr_data = np.array(data).astype(np.float32)
-  np_arr_label = np.array(label).astype(np.int64)
+    crop_mean = np.load('crop_mean.npy').reshape([num_frames_per_clip, crop_size, crop_size, 3])
+    frame_number_parser = parse.compile("{frame_number:d}.jpg")
+    clips = []
+    labels = []
+    for frame_dpath, frame_fname, action_label in metadata:
+        start_frame_number = frame_number_parser.parse(frame_fname)["frame_number"]
+        max_frame_number = max([ frame_number_parser.parse(fname)["frame_number"] for fname in os.listdir(frame_dpath) if fname.endswith(".jpg") ])
+        if start_frame_number + num_frames_per_clip - 1 > max_frame_number:
+            continue
 
-  return np_arr_data, np_arr_label, next_batch_start, read_dirnames, valid_len
+        clip = []
+        clip_fpath = []
+        for i, frame_number in enumerate(range(start_frame_number, start_frame_number + num_frames_per_clip)):
+            frame_fpath = "{}/{:05d}.jpg".format(frame_dpath, frame_number)
+            np_frame = read_frame(frame_fpath, crop_size, crop_mean[i])
+            clip.append(np_frame)
+            clip_fpath.append(frame_fpath)
+        clips.append(clip)
+        action_label = action_label.split(",")
+        action_label = [ int(l) for l in action_label ]
+        onehot_action_label = np.zeros(c3d_model.NUM_CLASSES, dtype=np.float32)
+        onehot_action_label[action_label] = 1
+        labels.append(onehot_action_label)
+
+    # pad (duplicate) data/label if less than batch_size
+    assert len(clips) == len(labels)
+    if len(clips) < batch_size:
+        for _ in range(batch_size - len(clips)):
+            clips.append(clip)
+            labels.append(onehot_action_label)
+
+    np_clips = np.array(clips).astype(np.float32)
+    np_labels = np.array(labels).astype(np.float32)
+    return np_clips, np_labels, next_start_pos, metadata
+
