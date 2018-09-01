@@ -15,77 +15,46 @@
 
 """Trains and Evaluates the MNIST network using a feed dictionary."""
 # pylint: disable=missing-docstring
-import os
-import math
-import time
 from datetime import datetime
-import tempfile
 from io import StringIO
+import json
+import math
+import os
+import time
+import tempfile
 
+import cv2
+import moviepy.editor as mpy
+import numpy as np
+import tensorflow as tf
 from tensorflow.python.framework import constant_op 
 from tensorflow.python.ops import summary_op_util
-import moviepy.editor as mpy
-import tensorflow as tf
-import numpy as np
-import cv2
 
-import input_data
 import c3d_model
+import input_data
 from logger import Logger
 
 
 # Basic model parameters as external flags.
 flags = tf.app.flags
-GPU_LIST = [7]
+GPU_LIST = [5]
 N_GPU = len(GPU_LIST)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([ str(i) for i in GPU_LIST ])
 #flags.DEFINE_float('learning_rate', 0.0, 'Initial learning rate.')
-flags.DEFINE_integer('max_steps', 5000, 'Number of steps to run trainer.')
-flags.DEFINE_integer('batch_size', 10, 'Batch size.')
+flags.DEFINE_integer('max_steps', 500, 'Number of steps to run trainer.')
+flags.DEFINE_integer('batch_size', 20, 'Batch size.')
 FLAGS = flags.FLAGS
 MOVING_AVERAGE_DECAY = 0.9999
-MODEL_TAG = "friends_balanced-1000"
+MODEL_TAG = "friends_isolated_balanced-1000"
 MODEL_SAVE_DPATH = './models/{}'.format(MODEL_TAG)
 LOG_DPATH =  "./visual_logs/{}".format(MODEL_TAG)
-TRAIN_DATA_FPATH = "./list/friends_train_balanced-1000.list"
-TEST_DATA_FPATH = "./list/friends_test_balanced-1000.list"
+TRAIN_DATA_FPATH = "./list/friends_train_isolated_balanced-1000.list"
+TEST_DATA_FPATH = "./list/friends_test_isolated_balanced-1000.list"
 
 
-def py_encode_gif(im_thwc, tag, fps=4):
-  """
-  Given a 4D numpy tensor of images, encodes as a gif.
-  """
-  with tempfile.NamedTemporaryFile() as f: fname = f.name + '.gif'
-  clip = mpy.ImageSequenceClip(list(im_thwc), fps=fps)
-  clip.write_gif(fname, verbose=False, progress_bar=False)
-  with open(fname, 'rb') as f: enc_gif = f.read()
-  os.remove(fname)
-  # create a tensorflow image summary protobuf:
-  thwc = im_thwc.shape
-  im_summ = tf.Summary.Image()
-  im_summ.height = thwc[1]
-  im_summ.width = thwc[2]
-  im_summ.colorspace = 3 # fix to 3 == RGB
-  im_summ.encoded_image_string = enc_gif
-  # create a summary obj:
-  summ = tf.Summary()
-  summ.value.add(tag=tag, image=im_summ)
-  summ_str = summ.SerializeToString()
-  return summ_str
-
-def add_gif_summary(name, im_thwc, fps=4, collections=None, family=None):
-  """
-  IM_THWC: 4D tensor (TxHxWxC) for which GIF is to be generated.
-  COLLECTION: collections to which the summary op is to be added.
-  """
-  if summary_op_util.skip_summary(): return constant_op.constant('')
-  with summary_op_util.summary_scope(name, family, values=[im_thwc]) as (tag, scope):
-    gif_summ = tf.py_func(py_encode_gif, [im_thwc, tag, fps], tf.string, stateful=False)
-    summary_op_util.collect(gif_summ, collections, [tf.GraphKeys.SUMMARIES])
-  return gif_summ
-
-
+with open("./data/index_action.json", "r") as fin:
+    index_action_dict = json.load(fin)
 
 def placeholder_inputs(batch_size):
     """Generate placeholder variables to represent the input tensors.
@@ -184,7 +153,34 @@ def pred_real_to_table(preds, reals, prefix=""):
         pred_label_indices = ", ".join([ "{}({:.2f})".format(i, pred_sigmoid[i]) for i in pred_label_indices ])
         lines.append([ real_label_indices, pred_label_indices ])
     return lines
- 
+
+def clip_summary_with_text(clip, actual, pred):
+    TEXT_HEIGHT = 25
+    TEXT_WIDTH = 50
+    padded_clip = np.pad(clip, pad_width=((0,0), (TEXT_HEIGHT,0), (TEXT_WIDTH//2,TEXT_WIDTH//2), (0,0)), mode="constant", constant_values=0)
+    actual_labels = np.where(actual == 1)[0]
+    pred = (1 / (1 + np.exp(-pred)))
+    pred_labels = np.where(pred > 0.5)[0]
+    for frame in padded_clip:
+        actual_actions = [index_action_dict[str(a)] for a in actual_labels]
+        cv2.putText(
+            frame,
+            "actual: {}".format(", ".join(actual_actions)),
+            (0, (TEXT_HEIGHT - 5) // 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.3,
+            (255, 255, 255)
+        )
+        pred_actions = [index_action_dict[str(p)] for p in pred_labels]
+        cv2.putText(
+            frame,
+            "pred: {}".format(", ".join(pred_actions)),
+            (0, TEXT_HEIGHT - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.3,
+            (255, 255, 255)
+        )
+    return padded_clip
 
 def run_training():
     # Get the sets of images and labels for training, validation, and
@@ -263,22 +259,6 @@ def run_training():
                 tower_grads2.append(grads2)
                 logits.append(logit)
 
-        """
-        clip = images_placeholder[0] + crop_mean
-        # TEXT_HEIGHT = 25
-        # padded_clip = tf.image.resize_image_with_pad(clip, c3d_model.CROP_SIZE + 2 * TEXT_HEIGHT, c3d_model.CROP_SIZE)
-        # text_layers = np.zeros((c3d_model.NUM_FRAMES_PER_CLIP, c3d_model.CROP_SIZE + 2 * TEXT_HEIGHT, c3d_model.CROP_SIZE, 3))
-        # actual_label = tf.argmax(labels_placeholder[0])
-        # pred_label = tf.argmax(logit[0])
-        # for l in text_layers:
-        #     cv2.putText(l, "actual: {}".format(actual_label), (0, (TEXT_HEIGHT - 5) // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255))
-        #     cv2.putText(l, "pred: {}".format(pred_label), (0, TEXT_HEIGHT - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255))
-        # padded_clip = tf.add(padded_clip, text_layers)
-        # tf.map_fn(lambda frame: cv2.putText(frame, "test", (0, 0), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255)), clip)
-        # add_gif_summary("clip", padded_clip)
-        add_gif_summary("clip", clip)
-        """
-
         logits = tf.concat(logits, 0)
         accuracy = tower_acc(logits, labels_placeholder)
         tf.summary.scalar('accuracy', accuracy)
@@ -329,8 +309,11 @@ def run_training():
                 labels_placeholder: train_labels
             })
             if (step) % 10 == 0 or (step + 1) == FLAGS.max_steps:
+                """ Save trained model """
                 saver.save(sess, os.path.join(MODEL_SAVE_DPATH, 'c3d_friends_model'), global_step=step)
 
+
+                """ Log train summary """
                 summary, preds, acc = sess.run(
                     [merged, logits, accuracy],
                     feed_dict={
@@ -340,10 +323,14 @@ def run_training():
                 )
                 print("Train acc.: {:.5f}".format(acc), end="")
                 # train_writer.add_summary(summary, step)
-                train_logger.scalar_summary("accuracy", acc, step)
                 pred_summary = pred_real_to_table(preds, train_labels)
+                gif_summary = clip_summary_with_text(train_clips[0] + crop_mean, train_labels[0], preds[0])
+                train_logger.scalar_summary("accuracy", acc, step)
                 train_logger.text_summary("prediction", pred_summary, step)
-    
+                train_logger.gif_summary("clip", gif_summary, step)
+
+
+                """ Log test summary """
                 test_clips, test_labels, test_start_pos, test_metadata = input_data.read_clip_and_label(
                     metadata_fpath=TEST_DATA_FPATH,
                     batch_size=FLAGS.batch_size * N_GPU,
@@ -361,9 +348,11 @@ def run_training():
                 )
                 print("\tTest acc.: {:.5f}".format(acc))
                 # test_writer.add_summary(summary, step)
-                test_logger.scalar_summary("accuracy", acc, step)
                 pred_summary = pred_real_to_table(preds, test_labels)
+                gif_summary = clip_summary_with_text(test_clips[0] + crop_mean, test_labels[0], preds[0])
+                test_logger.scalar_summary("accuracy", acc, step)
                 test_logger.text_summary("prediction", pred_summary, step)
+                test_logger.gif_summary("clip", gif_summary, step)
     print("done")
 
 def main(_):

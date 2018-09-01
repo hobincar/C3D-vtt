@@ -1,4 +1,8 @@
 # Code referenced from https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
+import os
+import tempfile
+
+import moviepy.editor as mpy
 import numpy as np
 import scipy.misc 
 from io import BytesIO
@@ -43,6 +47,26 @@ class Logger(object):
 
         # Create and write Summary
         summary = tf.Summary(value=img_summaries)
+        self.writer.add_summary(summary, step)
+
+    def gif_summary(self, tag, images, step, fps=5):
+        """ Given a 4D numpy tensor of images, log as a gif. """
+        with tempfile.NamedTemporaryFile() as f: fname = f.name + '.gif'
+        clip = mpy.ImageSequenceClip(list(images), fps=fps)
+        clip.write_gif(fname, verbose=False, progress_bar=False)
+        with open(fname, 'rb') as f: enc_gif = f.read()
+        os.remove(fname)
+        # create a tensorflow image summary protobuf:
+        thwc = images.shape
+        im_summ = tf.Summary.Image()
+        im_summ.height = thwc[1]
+        im_summ.width = thwc[2]
+        im_summ.colorspace = 3 # fix to 3 == RGB
+        im_summ.encoded_image_string = enc_gif
+        # create a summary obj:
+        summary = tf.Summary()
+        summary.value.add(tag=tag, image=im_summ)
+        # summ_str = summ.SerializeToString()
         self.writer.add_summary(summary, step)
 
     def histo_summary(self, tag, values, step, bins=1000):
