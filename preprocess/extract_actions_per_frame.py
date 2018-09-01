@@ -38,7 +38,7 @@ def extract_actions_per_frame(episode):
     num_frames = len(jdata['visual_results'])
     time_parser = parse.compile("{hour:d}:{minute:d}:{second:d};{frame:d}")
     frame_action_dict = {}
-    for frame in range(0, num_frames, 3):
+    for frame in range(0, num_frames, 3 * 8): # 3 for removing redundant action labeling & 8 from C3D paper
         start_time_string = jdata['visual_results'][frame]['start_time']
         s = time_parser.parse(start_time_string)
         s_time_frm = int((s["hour"] * 3600 + s["minute"] * 60 + s["second"] + s["frame"]/24.0) * FPS)
@@ -188,10 +188,21 @@ def list_video_action():
     import os
     import numpy as np
 
-    video_dnames = [ dname for dname in os.listdir("data/friends") if dname.startswith("1x") ]
-    video_action_dict = defaultdict(lambda: [])
+    # N_MAX_DATA_PER_ACTION = float("inf")
+    N_MAX_DATA_PER_ACTION = 1000
+    TRAIN_RATIO = 0.7
+    episodes = [i for i in range(1, 11)]
+    n_train_episodes = int(len(episodes) * TRAIN_RATIO)
+    train_episodes = episodes[:n_train_episodes]
+    test_episodes = episodes[:n_train_episodes]
+
+
+    """ Group frame-action pairs into train & test set """
     total_actions = []
-    for episode in range(1, 11):
+    video_dnames = os.listdir("data/friends")
+
+    train_video_action_dict = defaultdict(lambda: [])
+    for episode in train_episodes:
         with open("data/actions/S01_E{:02d}.json".format(episode), 'r') as fin:
             frame_action_dict = json.load(fin)
         frame_action_list = [ (frame, frame_action_dict[frame]) for frame in sorted(frame_action_dict) ]
@@ -205,58 +216,62 @@ def list_video_action():
             video_fname = "{:05d}.jpg".format(int(frame)+1)
             actions = ",".join(actions)
             video_action_string = "{}\t{}\t{}".format(video_dpath, video_fname, actions)
-            video_action_dict[actions].append(video_action_string)
+            train_video_action_dict[actions].append(video_action_string)
 
-    """
-    video_action_list = np.asarray(video_action_list)
-    indices = np.arange(0, len(video_action_list))
-    np.random.seed(42)
-    np.random.shuffle(indices)
-    n_train = int(len(video_action_list) * 0.8)
-    train_indices = indices[:n_train]
-    val_indices = indices[n_train:]
+    test_video_action_dict = defaultdict(lambda: [])
+    for episode in test_episodes:
+        with open("data/actions/S01_E{:02d}.json".format(episode), 'r') as fin:
+            frame_action_dict = json.load(fin)
+        frame_action_list = [ (frame, frame_action_dict[frame]) for frame in sorted(frame_action_dict) ]
+        video_dname = next((dname for dname in video_dnames if dname.startswith("1x{:02d}".format(episode))), None)
+        video_dpath = "data/friends/{}".format(video_dname)
+        for frame, actions in frame_action_list:
+            # Filter actions
+            actions = filter_actions(actions)
+            total_actions.append(np.asarray(actions, dtype=int))
 
-    train_video_action_list = video_action_list[train_indices]
-    train_video_action_list = "\n".join(train_video_action_list)
-    with open("list/friends_train.list", "w") as fout:
-        fout.write(train_video_action_list)
+            video_fname = "{:05d}.jpg".format(int(frame)+1)
+            actions = ",".join(actions)
+            video_action_string = "{}\t{}\t{}".format(video_dpath, video_fname, actions)
+            test_video_action_dict[actions].append(video_action_string)
 
-    val_video_action_list = video_action_list[val_indices]
-    val_video_action_list = "\n".join(val_video_action_list)
-    with open("list/friends_val.list", "w") as fout:
-        fout.write(val_video_action_list)
-    """
 
-    # N_MAX_DATA_PER_ACTION = float("inf")
-    N_MAX_DATA_PER_ACTION = 1000
-    TRAIN_RATIO = 0.7
-    np.random.seed(42)
-    train_video_action_list = []
-    val_video_action_list = []
-    for action, video_action_strings in video_action_dict.items():
-        np.random.shuffle(video_action_strings)
-        n_data = min(N_MAX_DATA_PER_ACTION, len(video_action_strings))
-        n_train = int( n_data * TRAIN_RATIO )
-        train_video_action_list += video_action_strings[:n_train]
-        val_video_action_list += video_action_strings[n_train:n_data]
-    np.random.shuffle(train_video_action_list)
-    with open("list/friends_train_balanced-{}.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
-        train_video_actions = "\n".join(train_video_action_list)
-        fout.write(train_video_actions)
-    np.random.shuffle(val_video_action_list)
-    with open("list/friends_test_balanced-{}.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
-        val_video_actions = "\n".join(val_video_action_list)
-        fout.write(val_video_actions)
-
-    """
+    """ Log statistics of total actions """
     from collections import Counter
     from pprint import pprint
     pprint(Counter([ action for actions in total_actions for action in actions ]))
-    """
+
+
+    """ Filter the number of data in each action category """
+    np.random.seed(42)
+
+    train_video_action_list = []
+    for action, video_action_strings in train_video_action_dict.items():
+        np.random.shuffle(video_action_strings)
+        n_data = min(N_MAX_DATA_PER_ACTION, len(video_action_strings))
+        train_video_action_list += video_action_strings[:n_data]
+
+    test_video_action_list = []
+    for action, video_action_strings in train_video_action_dict.items():
+        np.random.shuffle(video_action_strings)
+        n_data = min(N_MAX_DATA_PER_ACTION, len(video_action_strings))
+        test_video_action_list += video_action_strings[:n_data]
+
+
+    """ Save frame-action pairs """
+    np.random.shuffle(train_video_action_list)
+    with open("list/friends_train_isolated_balanced-{}.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
+        train_video_actions = "\n".join(train_video_action_list)
+        fout.write(train_video_actions)
+
+    np.random.shuffle(test_video_action_list)
+    with open("list/friends_test_isolated_balanced-{}.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
+        test_video_actions = "\n".join(test_video_action_list)
+        fout.write(test_video_actions)
 
 
 def main():
-    # save_frame_action()
+    save_frame_action()
     list_video_action()
 
 if __name__ == '__main__':
