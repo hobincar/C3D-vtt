@@ -99,3 +99,9 @@ def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per
     np_labels = np.array(labels).astype(np.float32)
     return np_clips, np_labels, next_start_pos, metadata
 
+
+def count_n_data(data_fpath):
+    with open(data_fpath, "r") as fin:
+        n_data = len(fin.readlines())
+    return n_data
+

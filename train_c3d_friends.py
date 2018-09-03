@@ -125,6 +125,19 @@ def tower_acc(logits, labels):
     accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
     return accuracy
 
+def calc_metrics(preds, actuals):
+    preds = (preds > 0.5).astype(np.bool)
+    actuals = actuals.astype(np.bool)
+
+    TP = np.logical_and(preds, actuals).sum(axis=1)
+    FP = np.logical_and(preds, ~actuals).sum(axis=1)
+    FN = np.logical_and(~preds, actuals).sum(axis=1)
+
+    precision = (TP / (TP + FP)).mean()
+    recall = (TP / (TP + FN)).mean()
+    f1score = 2 * (precision * recall) / (precision + recall)
+    return precision, recall, f1score
+
 def _variable_on_cpu(name, shape, initializer):
     with tf.device('/cpu:0'):
         var = tf.get_variable(name, shape, initializer=initializer)
@@ -295,6 +308,7 @@ def run_training():
 
         train_start_pos = 0
         test_start_pos = 0
+        n_test_data = input_data.count_n_data(TEST_DATA_FPATH)
         for step in range(FLAGS.max_steps):
             train_clips, train_labels, train_start_pos, train_metadata = input_data.read_clip_and_label(
                 metadata_fpath=TRAIN_DATA_FPATH,
@@ -333,7 +347,7 @@ def run_training():
                 """ Log test summary """
                 test_clips, test_labels, test_start_pos, test_metadata = input_data.read_clip_and_label(
                     metadata_fpath=TEST_DATA_FPATH,
-                    batch_size=FLAGS.batch_size * N_GPU,
+                    batch_size=n_test_data,
                     start_pos=test_start_pos,
                     num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
                     crop_size=c3d_model.CROP_SIZE,
@@ -346,11 +360,15 @@ def run_training():
                         labels_placeholder: test_labels,
                     }
                 )
+                precision, recall, f1score = calc_metrics(preds, test_labels)
                 print("\tTest acc.: {:.5f}".format(acc))
                 # test_writer.add_summary(summary, step)
                 pred_summary = pred_real_to_table(preds, test_labels)
                 gif_summary = clip_summary_with_text(test_clips[0] + crop_mean, test_labels[0], preds[0])
                 test_logger.scalar_summary("accuracy", acc, step)
+                test_logger.scalar_summary("precision", precision, step)
+                test_logger.scalar_summary("recall", recall, step)
+                test_logger.scalar_summary("f1score", f1score, step)
                 test_logger.text_summary("prediction", pred_summary, step)
                 test_logger.gif_summary("clip", gif_summary, step)
     print("done")
