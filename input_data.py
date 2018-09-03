@@ -49,8 +49,7 @@ def read_frame(frame_fpath, crop_size, crop_mean):
 
     return img
 
-
-def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP, crop_size=c3d_model.CROP_SIZE, shuffle=False):
+def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP, crop_size=c3d_model.CROP_SIZE, shuffle=False, use_cached=False):
     with open(metadata_fpath, 'r') as fin:
         rows = list(fin)
         start_pos = start_pos % len(rows)
@@ -74,13 +73,17 @@ def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per
         if start_frame_number + num_frames_per_clip - 1 > max_frame_number:
             continue
 
-        clip = []
-        clip_fpath = []
-        for i, frame_number in enumerate(range(start_frame_number, start_frame_number + num_frames_per_clip)):
-            frame_fpath = "{}/{:05d}.jpg".format(frame_dpath, frame_number)
-            np_frame = read_frame(frame_fpath, crop_size, crop_mean[i])
-            clip.append(np_frame)
-            clip_fpath.append(frame_fpath)
+        cached_clip_fpath = "{}/{:05d}.clip.npy".format(frame_dpath, start_frame_number)
+        if use_cached and os.path.isfile(cached_clip_fpath):
+            with open(cached_clip_fpath, 'r') as fin:
+                clip = np.load(cached_clip_fpath)
+        else:
+            clip = []
+            for i, frame_number in enumerate(range(start_frame_number, start_frame_number + num_frames_per_clip)):
+                frame_fpath = "{}/{:05d}.jpg".format(frame_dpath, frame_number)
+                np_frame = read_frame(frame_fpath, crop_size, crop_mean[i])
+                clip.append(np_frame)
+            np.save(cached_clip_fpath, clip)
         clips.append(clip)
         action_label = action_label.split(",")
         action_label = [ int(l) for l in action_label ]

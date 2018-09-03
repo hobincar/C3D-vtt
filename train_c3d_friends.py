@@ -27,7 +27,7 @@ import cv2
 import moviepy.editor as mpy
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.framework import constant_op 
+from tensorflow.python.framework import constant_op
 from tensorflow.python.ops import summary_op_util
 
 import c3d_model
@@ -37,12 +37,12 @@ from logger import Logger
 
 # Basic model parameters as external flags.
 flags = tf.app.flags
-GPU_LIST = [5]
+GPU_LIST = [0, 1]
 N_GPU = len(GPU_LIST)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([ str(i) for i in GPU_LIST ])
 #flags.DEFINE_float('learning_rate', 0.0, 'Initial learning rate.')
-flags.DEFINE_integer('max_steps', 500, 'Number of steps to run trainer.')
+flags.DEFINE_integer('max_steps', 5000, 'Number of steps to run trainer.')
 flags.DEFINE_integer('batch_size', 20, 'Batch size.')
 FLAGS = flags.FLAGS
 MOVING_AVERAGE_DECAY = 0.9999
@@ -133,8 +133,12 @@ def calc_metrics(preds, actuals):
     FP = np.logical_and(preds, ~actuals).sum(axis=1)
     FN = np.logical_and(~preds, actuals).sum(axis=1)
 
-    precision = (TP / (TP + FP)).mean()
-    recall = (TP / (TP + FN)).mean()
+    precision = TP / (TP + FP)
+    precision[np.isnan(precision)] = 0
+    precision = precision.mean()
+    recall = TP / (TP + FN)
+    recall[np.isnan(recall)] = 0
+    recall = recall.mean()
     f1score = 2 * (precision * recall) / (precision + recall)
     return precision, recall, f1score
 
@@ -201,7 +205,7 @@ def run_training():
 
     # Create model directory
     os.makedirs(MODEL_SAVE_DPATH, exist_ok=True)
-    use_pretrained_model = True 
+    use_pretrained_model = True
     model_filename = "./sports1m_finetuning_ucf101.model"
 
     with tf.Graph().as_default():
@@ -246,7 +250,7 @@ def run_training():
                 'bd2': _variable_with_weight_decay('bd2', [4096], 0.000),
                 'out': _variable_with_weight_decay('bout_finetune', [c3d_model.NUM_CLASSES], 0.000),
             }
- 
+
         crop_mean = np.load('crop_mean.npy').reshape([c3d_model.NUM_FRAMES_PER_CLIP, c3d_model.CROP_SIZE, c3d_model.CROP_SIZE, 3])
         for i, gpu_index in enumerate(GPU_LIST):
             with tf.device('/gpu:%d' % gpu_index):
@@ -301,14 +305,11 @@ def run_training():
         # Create summary writter
         merged = tf.summary.merge_all()
         timestamp = datetime.now().strftime('%m/%d_%H:%M')
-        # train_writer = tf.summary.FileWriter('./visual_logs/friends_balanced-1000/softmax_loss/train/{}'.format(timestamp), sess.graph)
         train_logger = Logger("{}/train/{}".format(LOG_DPATH, timestamp))
-        # test_writer = tf.summary.FileWriter('./visual_logs/friends_balanced-1000/softmax_loss/test/{}'.format(timestamp), sess.graph)
         test_logger = Logger("{}/test/{}".format(LOG_DPATH, timestamp))
 
         train_start_pos = 0
         test_start_pos = 0
-        n_test_data = input_data.count_n_data(TEST_DATA_FPATH)
         for step in range(FLAGS.max_steps):
             train_clips, train_labels, train_start_pos, train_metadata = input_data.read_clip_and_label(
                 metadata_fpath=TRAIN_DATA_FPATH,
@@ -317,6 +318,7 @@ def run_training():
                 num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
                 crop_size=c3d_model.CROP_SIZE,
                 shuffle=False,
+                use_cached=True,
             )
             sess.run(train_op, feed_dict={
                 images_placeholder: train_clips,
@@ -336,7 +338,6 @@ def run_training():
                     }
                 )
                 print("Train acc.: {:.5f}".format(acc), end="")
-                # train_writer.add_summary(summary, step)
                 pred_summary = pred_real_to_table(preds, train_labels)
                 gif_summary = clip_summary_with_text(train_clips[0] + crop_mean, train_labels[0], preds[0])
                 train_logger.scalar_summary("accuracy", acc, step)
@@ -345,24 +346,29 @@ def run_training():
 
 
                 """ Log test summary """
-                test_clips, test_labels, test_start_pos, test_metadata = input_data.read_clip_and_label(
-                    metadata_fpath=TEST_DATA_FPATH,
-                    batch_size=n_test_data,
-                    start_pos=test_start_pos,
-                    num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
-                    crop_size=c3d_model.CROP_SIZE,
-                    shuffle=False,
-                )
-                summary, preds, acc = sess.run(
-                    [merged, logits, accuracy],
-                    feed_dict={
-                        images_placeholder: test_clips,
-                        labels_placeholder: test_labels,
-                    }
-                )
-                precision, recall, f1score = calc_metrics(preds, test_labels)
+                t_preds = None
+                t_actuals = None
+                for _ in range(10):
+                    test_clips, test_labels, test_start_pos, test_metadata = input_data.read_clip_and_label(
+                        metadata_fpath=TEST_DATA_FPATH,
+                        batch_size=FLAGS.batch_size * N_GPU,
+                        start_pos=test_start_pos,
+                        num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
+                        crop_size=c3d_model.CROP_SIZE,
+                        shuffle=False,
+                        use_cached=True,
+                    )
+                    summary, preds, acc = sess.run(
+                        [merged, logits, accuracy],
+                        feed_dict={
+                            images_placeholder: test_clips,
+                            labels_placeholder: test_labels,
+                        }
+                    )
+                    t_preds = preds if t_preds is None else np.vstack([t_preds, preds])
+                    t_actuals = test_labels if t_actuals is None else np.vstack([t_actuals, test_labels])
+                precision, recall, f1score = calc_metrics(t_preds, t_actuals)
                 print("\tTest acc.: {:.5f}".format(acc))
-                # test_writer.add_summary(summary, step)
                 pred_summary = pred_real_to_table(preds, test_labels)
                 gif_summary = clip_summary_with_text(test_clips[0] + crop_mean, test_labels[0], preds[0])
                 test_logger.scalar_summary("accuracy", acc, step)
