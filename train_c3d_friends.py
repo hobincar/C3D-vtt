@@ -37,7 +37,7 @@ from logger import Logger
 
 # Basic model parameters as external flags.
 flags = tf.app.flags
-GPU_LIST = [0, 1]
+GPU_LIST = [0]
 N_GPU = len(GPU_LIST)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([ str(i) for i in GPU_LIST ])
@@ -46,7 +46,7 @@ flags.DEFINE_integer('max_steps', 5000, 'Number of steps to run trainer.')
 flags.DEFINE_integer('batch_size', 20, 'Batch size.')
 FLAGS = flags.FLAGS
 MOVING_AVERAGE_DECAY = 0.9999
-MODEL_TAG = "friends"
+MODEL_TAG = "friends/person_bbox_tight"
 MODEL_SAVE_DPATH = './models/{}'.format(MODEL_TAG)
 LOG_DPATH =  "./visual_logs/{}".format(MODEL_TAG)
 TRAIN_DATA_FPATH = "./list/friends_train.list"
@@ -319,6 +319,7 @@ def run_training():
                 crop_size=c3d_model.CROP_SIZE,
                 shuffle=False,
                 use_cached=True,
+                use_person_bbox=True,
             )
             sess.run(train_op, feed_dict={
                 images_placeholder: train_clips,
@@ -357,6 +358,7 @@ def run_training():
                         crop_size=c3d_model.CROP_SIZE,
                         shuffle=False,
                         use_cached=True,
+                        use_person_bbox=True,
                     )
                     summary, preds, acc = sess.run(
                         [merged, logits, accuracy],

@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import json
 import os
 import random
 import time
@@ -35,7 +36,6 @@ import c3d_model
 def read_frame(frame_fpath, crop_size, crop_mean):
     frame = Image.open(frame_fpath)
     np_frame = np.array(frame)
-    print("np_frame: ", np_frame.shape)
 
     if frame.width > frame.height:
         scale = crop_size / frame.height
@@ -43,30 +43,42 @@ def read_frame(frame_fpath, crop_size, crop_mean):
     else:
         scale = crop_size / frame.width
         img = np.array(cv2.resize(np_frame, (crop_size, int(img.height * scale + 1)))).astype(np.float32)
-    print("img: ", img.shape)
 
     img = img[np.int((img.shape[0] - crop_size)/2):np.int((img.shape[0] - crop_size)/2) + crop_size,
               np.int((img.shape[1] - crop_size)/2):np.int((img.shape[1] - crop_size)/2) + crop_size,:] - crop_mean
-    print("img: ", img.shape)
 
     return img
 
-def read_frame_with_bbox(frame_fpath, crop_size, crop_mean, bbox):
+def read_frame_with_bbox_tight(frame_fpath, crop_size, crop_mean, bbox):
     frame = Image.open(frame_fpath)
     np_frame = np.array(frame)
 
     np_frame = np_frame[bbox['ymin']:bbox['ymax'], bbox['xmin']:bbox['xmax'], :]
 
+    img = np.array(cv2.resize(np_frame, (crop_size, crop_size))).astype(np.float32)
 
-    if frame.width > frame.height:
-        scale = crop_size / frame.height
-        img = np.array(cv2.resize(np_frame, (int(frame.width * scale + 1), crop_size))).astype(np.float32)
+    return img
+
+
+def read_frame_with_bbox_loose(frame_fpath, crop_size, crop_mean, bbox):
+    frame = Image.open(frame_fpath)
+    np_frame = np.array(frame)
+
+    bbox_width = bbox['xmax'] - bbox['xmin']
+    bbox_height = bbox['ymax'] - bbox['ymin']
+    if bbox_width > bbox_height:
+        xmin = bbox['xmin']
+        xmax = bbox['xmax']
+        ymin = int((bbox['ymin'] + bbox['ymax']) / 2 - bbox_width / 2)
+        ymax = ymin + bbox_width
     else:
-        scale = crop_size / frame.width
-        img = np.array(cv2.resize(np_frame, (crop_size, int(img.height * scale + 1)))).astype(np.float32)
+        xmin = int((bbox['xmin'] + bbox['xmax']) / 2 - bbox_height / 2)
+        xmax = xmin + bbox_height
+        ymin = bbox['ymin']
+        ymax = bbox['ymax']
+    img = np_frame[ymin:ymax, xmin:xmax, :]
 
-    img = img[np.int((img.shape[0] - crop_size)/2):np.int((img.shape[0] - crop_size)/2) + crop_size,
-              np.int((img.shape[1] - crop_size)/2):np.int((img.shape[1] - crop_size)/2) + crop_size,:] - crop_mean
+    img = np.array(cv2.resize(img, (crop_size, crop_size))).astype(np.float32)
 
     return img
 
@@ -109,25 +121,36 @@ def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per
                 bbox = None
                 if use_person_bbox:
                     episode_name = frame_dpath.split("/")[-1]
-                    person_bbox_fpath = "./data/friends_json/bbox/person/{}/{}.json".format(episode_name, frame_number)
+                    person_bbox_fpath = "./data/friends_json/bbox/person/{}/{:05d}.json".format(episode_name, frame_number)
                     with open(person_bbox_fpath, 'r') as fin:
                         person_bboxes = json.load(fin)
                     min_xmin = float("inf")
                     min_ymin = float("inf")
                     max_xmax = -float("inf")
                     max_ymax = -float("inf")
-                    for i, person_bbox in person_bboxes.items():
-                        min_xmin = min(min_xmin, int(person_bbox['bbox']['xmin'])
-                        min_ymin = min(min_ymin, int(person_bbox['bbox']['ymin'])
-                        max_xmax = max(max_xmax, int(person_bbox['bbox']['xmax'])
-                        max_ymax = max(max_ymax, int(person_bbox['bbox']['ymax'])
+                    if isinstance(person_bboxes, dict):
+                        for _, person_bbox in person_bboxes.items():
+                            min_xmin = min(min_xmin, int(person_bbox['bbox']['xmin']))
+                            min_ymin = min(min_ymin, int(person_bbox['bbox']['ymin']))
+                            max_xmax = max(max_xmax, int(person_bbox['bbox']['xmax']))
+                            max_ymax = max(max_ymax, int(person_bbox['bbox']['ymax']))
+                    elif isinstance(person_bboxes, list):
+                        for person_bbox in person_bboxes:
+                            if person_bbox['label'] != 'person': continue
+                            min_xmin = min(min_xmin, int(person_bbox['topleft']['x']))
+                            min_ymin = min(min_ymin, int(person_bbox['topleft']['y']))
+                            max_xmax = min(max_xmax, int(person_bbox['bottomright']['x']))
+                            max_ymax = min(max_ymax, int(person_bbox['bottomright']['y']))
                     bbox = {
                         'xmin': min_xmin,
                         'ymin': min_ymin,
                         'xmax': max_xmax,
                         'ymax': max_ymax,
                     }
-                    np_frame = read_frame_with_bbox(frame_fpath, crop_size, crop_mean[i], bbox)
+                    if np.any(np.isinf([ min_xmin, min_ymin, max_xmax, max_ymax ])):
+                        np_frame = read_frame(frame_fpath, crop_size, crop_mean[i])
+                    else:
+                        np_frame = read_frame_with_bbox_tight(frame_fpath, crop_size, crop_mean[i], bbox)
                 else:
                     np_frame = read_frame(frame_fpath, crop_size, crop_mean[i])
                 clip.append(np_frame)
