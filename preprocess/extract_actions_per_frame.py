@@ -260,12 +260,12 @@ def list_video_action():
 
     """ Save frame-action pairs """
     np.random.shuffle(train_video_action_list)
-    with open("list/friends_train_isolated_balanced-{}.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
+    with open("list/friends_train.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
         train_video_actions = "\n".join(train_video_action_list)
         fout.write(train_video_actions)
 
     np.random.shuffle(test_video_action_list)
-    with open("list/friends_test_isolated_balanced-{}.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
+    with open("list/friends_test.list".format(N_MAX_DATA_PER_ACTION), "w") as fout:
         test_video_actions = "\n".join(test_video_action_list)
         fout.write(test_video_actions)
 

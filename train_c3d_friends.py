@@ -46,11 +46,11 @@ flags.DEFINE_integer('max_steps', 5000, 'Number of steps to run trainer.')
 flags.DEFINE_integer('batch_size', 20, 'Batch size.')
 FLAGS = flags.FLAGS
 MOVING_AVERAGE_DECAY = 0.9999
-MODEL_TAG = "friends_isolated_balanced-1000"
+MODEL_TAG = "friends"
 MODEL_SAVE_DPATH = './models/{}'.format(MODEL_TAG)
 LOG_DPATH =  "./visual_logs/{}".format(MODEL_TAG)
-TRAIN_DATA_FPATH = "./list/friends_train_isolated_balanced-1000.list"
-TEST_DATA_FPATH = "./list/friends_test_isolated_balanced-1000.list"
+TRAIN_DATA_FPATH = "./list/friends_train.list"
+TEST_DATA_FPATH = "./list/friends_test.list"
 
 
 with open("./data/index_action.json", "r") as fin:
