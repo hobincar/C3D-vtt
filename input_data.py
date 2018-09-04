@@ -35,8 +35,29 @@ import c3d_model
 def read_frame(frame_fpath, crop_size, crop_mean):
     frame = Image.open(frame_fpath)
     np_frame = np.array(frame)
+    print("np_frame: ", np_frame.shape)
 
-    # img = Image.fromarray(frame_data.astype(np.uint8))
+    if frame.width > frame.height:
+        scale = crop_size / frame.height
+        img = np.array(cv2.resize(np_frame, (int(frame.width * scale + 1), crop_size))).astype(np.float32)
+    else:
+        scale = crop_size / frame.width
+        img = np.array(cv2.resize(np_frame, (crop_size, int(img.height * scale + 1)))).astype(np.float32)
+    print("img: ", img.shape)
+
+    img = img[np.int((img.shape[0] - crop_size)/2):np.int((img.shape[0] - crop_size)/2) + crop_size,
+              np.int((img.shape[1] - crop_size)/2):np.int((img.shape[1] - crop_size)/2) + crop_size,:] - crop_mean
+    print("img: ", img.shape)
+
+    return img
+
+def read_frame_with_bbox(frame_fpath, crop_size, crop_mean, bbox):
+    frame = Image.open(frame_fpath)
+    np_frame = np.array(frame)
+
+    np_frame = np_frame[bbox['ymin']:bbox['ymax'], bbox['xmin']:bbox['xmax'], :]
+
+
     if frame.width > frame.height:
         scale = crop_size / frame.height
         img = np.array(cv2.resize(np_frame, (int(frame.width * scale + 1), crop_size))).astype(np.float32)
@@ -49,7 +70,7 @@ def read_frame(frame_fpath, crop_size, crop_mean):
 
     return img
 
-def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP, crop_size=c3d_model.CROP_SIZE, shuffle=False, use_cached=False):
+def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP, crop_size=c3d_model.CROP_SIZE, shuffle=False, use_cached=False, use_person_bbox=False):
     with open(metadata_fpath, 'r') as fin:
         rows = list(fin)
         start_pos = start_pos % len(rows)
@@ -73,7 +94,11 @@ def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per
         if start_frame_number + num_frames_per_clip - 1 > max_frame_number:
             continue
 
-        cached_clip_fpath = "{}/{:05d}.clip.npy".format(frame_dpath, start_frame_number)
+        cached_clip_fpath = "{}/{:05d}.clip{}.npy".format(
+            frame_dpath,
+            start_frame_number,
+            ".person_bbox" if use_person_bbox else ""
+        )
         if use_cached and os.path.isfile(cached_clip_fpath):
             with open(cached_clip_fpath, 'r') as fin:
                 clip = np.load(cached_clip_fpath)
@@ -81,7 +106,30 @@ def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per
             clip = []
             for i, frame_number in enumerate(range(start_frame_number, start_frame_number + num_frames_per_clip)):
                 frame_fpath = "{}/{:05d}.jpg".format(frame_dpath, frame_number)
-                np_frame = read_frame(frame_fpath, crop_size, crop_mean[i])
+                bbox = None
+                if use_person_bbox:
+                    episode_name = frame_dpath.split("/")[-1]
+                    person_bbox_fpath = "./data/friends_json/bbox/person/{}/{}.json".format(episode_name, frame_number)
+                    with open(person_bbox_fpath, 'r') as fin:
+                        person_bboxes = json.load(fin)
+                    min_xmin = float("inf")
+                    min_ymin = float("inf")
+                    max_xmax = -float("inf")
+                    max_ymax = -float("inf")
+                    for i, person_bbox in person_bboxes.items():
+                        min_xmin = min(min_xmin, int(person_bbox['bbox']['xmin'])
+                        min_ymin = min(min_ymin, int(person_bbox['bbox']['ymin'])
+                        max_xmax = max(max_xmax, int(person_bbox['bbox']['xmax'])
+                        max_ymax = max(max_ymax, int(person_bbox['bbox']['ymax'])
+                    bbox = {
+                        'xmin': min_xmin,
+                        'ymin': min_ymin,
+                        'xmax': max_xmax,
+                        'ymax': max_ymax,
+                    }
+                    np_frame = read_frame_with_bbox(frame_fpath, crop_size, crop_mean[i], bbox)
+                else:
+                    np_frame = read_frame(frame_fpath, crop_size, crop_mean[i])
                 clip.append(np_frame)
             np.save(cached_clip_fpath, clip)
         clips.append(clip)
