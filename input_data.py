@@ -55,7 +55,7 @@ def read_frame_with_bbox_tight(frame_fpath, crop_size, crop_mean, bbox):
 
     np_frame = np_frame[bbox['ymin']:bbox['ymax'], bbox['xmin']:bbox['xmax'], :]
 
-    img = np.array(cv2.resize(np_frame, (crop_size, crop_size))).astype(np.float32)
+    img = np.array(cv2.resize(np_frame, (crop_size, crop_size))).astype(np.float32) # - crop_mean
 
     return img
 
@@ -128,19 +128,12 @@ def read_clip_and_label(metadata_fpath, batch_size, start_pos=-1, num_frames_per
                     min_ymin = float("inf")
                     max_xmax = -float("inf")
                     max_ymax = -float("inf")
-                    if isinstance(person_bboxes, dict):
-                        for _, person_bbox in person_bboxes.items():
-                            min_xmin = min(min_xmin, int(person_bbox['bbox']['xmin']))
-                            min_ymin = min(min_ymin, int(person_bbox['bbox']['ymin']))
-                            max_xmax = max(max_xmax, int(person_bbox['bbox']['xmax']))
-                            max_ymax = max(max_ymax, int(person_bbox['bbox']['ymax']))
-                    elif isinstance(person_bboxes, list):
-                        for person_bbox in person_bboxes:
-                            if person_bbox['label'] != 'person': continue
-                            min_xmin = min(min_xmin, int(person_bbox['topleft']['x']))
-                            min_ymin = min(min_ymin, int(person_bbox['topleft']['y']))
-                            max_xmax = min(max_xmax, int(person_bbox['bottomright']['x']))
-                            max_ymax = min(max_ymax, int(person_bbox['bottomright']['y']))
+                    for person_bbox in person_bboxes:
+                        if person_bbox['label'] != 'person': continue
+                        min_xmin = min(min_xmin, int(person_bbox['topleft']['x']))
+                        min_ymin = min(min_ymin, int(person_bbox['topleft']['y']))
+                        max_xmax = max(max_xmax, int(person_bbox['bottomright']['x']))
+                        max_ymax = max(max_ymax, int(person_bbox['bottomright']['y']))
                     bbox = {
                         'xmin': min_xmin,
                         'ymin': min_ymin,

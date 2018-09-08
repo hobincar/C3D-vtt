@@ -4,16 +4,16 @@ import tempfile
 
 import moviepy.editor as mpy
 import numpy as np
-import scipy.misc 
+import scipy.misc
 from io import BytesIO
 import tensorflow as tf
 
 
 class Logger(object):
-    
-    def __init__(self, log_dir):
+
+    def __init__(self, log_dir, max_queue=10):
         """Create a summary writer logging to log_dir."""
-        self.writer = tf.summary.FileWriter(log_dir)
+        self.writer = tf.summary.FileWriter(log_dir, max_queue=max_queue)
 
     def text_summary(self, tag, text, step):
         """Log text."""

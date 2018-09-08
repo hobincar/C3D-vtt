@@ -37,7 +37,7 @@ from logger import Logger
 
 # Basic model parameters as external flags.
 flags = tf.app.flags
-GPU_LIST = [0]
+GPU_LIST = [0, 1]
 N_GPU = len(GPU_LIST)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([ str(i) for i in GPU_LIST ])
@@ -46,11 +46,13 @@ flags.DEFINE_integer('max_steps', 5000, 'Number of steps to run trainer.')
 flags.DEFINE_integer('batch_size', 20, 'Batch size.')
 FLAGS = flags.FLAGS
 MOVING_AVERAGE_DECAY = 0.9999
-MODEL_TAG = "friends/person_bbox_tight"
+MODEL_TAG = "friends/person_bbox"
 MODEL_SAVE_DPATH = './models/{}'.format(MODEL_TAG)
 LOG_DPATH =  "./visual_logs/{}".format(MODEL_TAG)
 TRAIN_DATA_FPATH = "./list/friends_train.list"
 TEST_DATA_FPATH = "./list/friends_test.list"
+USE_CACHED = True
+USE_PERSON_BBOX = True
 
 
 with open("./data/index_action.json", "r") as fin:
@@ -305,8 +307,8 @@ def run_training():
         # Create summary writter
         merged = tf.summary.merge_all()
         timestamp = datetime.now().strftime('%m/%d_%H:%M')
-        train_logger = Logger("{}/train/{}".format(LOG_DPATH, timestamp))
-        test_logger = Logger("{}/test/{}".format(LOG_DPATH, timestamp))
+        train_logger = Logger("{}/train/{}".format(LOG_DPATH, timestamp), max_queue=100)
+        test_logger = Logger("{}/test/{}".format(LOG_DPATH, timestamp), max_queue=100)
 
         train_start_pos = 0
         test_start_pos = 0
@@ -318,8 +320,8 @@ def run_training():
                 num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
                 crop_size=c3d_model.CROP_SIZE,
                 shuffle=False,
-                use_cached=True,
-                use_person_bbox=True,
+                use_cached=USE_CACHED,
+                use_person_bbox=USE_PERSON_BBOX,
             )
             sess.run(train_op, feed_dict={
                 images_placeholder: train_clips,
@@ -340,7 +342,10 @@ def run_training():
                 )
                 print("Train acc.: {:.5f}".format(acc), end="")
                 pred_summary = pred_real_to_table(preds, train_labels)
-                gif_summary = clip_summary_with_text(train_clips[0] + crop_mean, train_labels[0], preds[0])
+                if USE_PERSON_BBOX:
+                    gif_summary = clip_summary_with_text(train_clips[0], train_labels[0], preds[0])
+                else:
+                    gif_summary = clip_summary_with_text(train_clips[0] + crop_mean, train_labels[0], preds[0])
                 train_logger.scalar_summary("accuracy", acc, step)
                 train_logger.text_summary("prediction", pred_summary, step)
                 train_logger.gif_summary("clip", gif_summary, step)
@@ -357,8 +362,8 @@ def run_training():
                         num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
                         crop_size=c3d_model.CROP_SIZE,
                         shuffle=False,
-                        use_cached=True,
-                        use_person_bbox=True,
+                        use_cached=USE_CACHED,
+                        use_person_bbox=USE_PERSON_BBOX,
                     )
                     summary, preds, acc = sess.run(
                         [merged, logits, accuracy],
@@ -371,8 +376,11 @@ def run_training():
                     t_actuals = test_labels if t_actuals is None else np.vstack([t_actuals, test_labels])
                 precision, recall, f1score = calc_metrics(t_preds, t_actuals)
                 print("\tTest acc.: {:.5f}".format(acc))
-                pred_summary = pred_real_to_table(preds, test_labels)
-                gif_summary = clip_summary_with_text(test_clips[0] + crop_mean, test_labels[0], preds[0])
+                pred_summary = pred_real_to_table(t_preds, t_actuals)
+                if USE_PERSON_BBOX:
+                    gif_summary = clip_summary_with_text(test_clips[0], test_labels[0], t_preds[0])
+                else:
+                    gif_summary = clip_summary_with_text(test_clips[0] + crop_mean, test_labels[0], t_preds[0])
                 test_logger.scalar_summary("accuracy", acc, step)
                 test_logger.scalar_summary("precision", precision, step)
                 test_logger.scalar_summary("recall", recall, step)
