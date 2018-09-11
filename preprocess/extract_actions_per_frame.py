@@ -30,7 +30,7 @@ def extract_actions_per_frame(episode):
         data = data.replace(b'\x99', b"'")
         data = data.replace(b'\xbf\xe3\x81\x88', b"")
         data = data.decode('utf-8')
-        
+
 
     data = re.sub(r"\s", "", data)
     jdata = json.loads(data)
@@ -108,82 +108,22 @@ def plot_action_frame():
 
 
 def list_video_action():
+    with open("data/action_index.json", "r") as fin:
+        action_index_dict = json.load(fin)
+
     def filter_actions(actions):
         if len(actions) == 0:
             actions = [ "none" ]
-        replace = lambda l, k, c: [k if e.lower() in c else e for e in l]
 
-        actions = [ action for action in actions if len(action) > 0 ]
+        actions = [ action.lower() for action in actions if len(action) > 0 ]
+        action_indices = []
+        for action in actions:
+            action_indices.append(action_index_dict[action])
+        action_indices = list(set(action_indices))
 
-        """
-        actions = replace(actions, "call", ["call", "phonecall"])
-        actions = replace(actions, "cleanup", ["cleaningup"])
-        actions = replace(actions, "cook", ["cooking"])
-        actions = replace(actions, "cut", ["cutting"])
-        actions = replace(actions, "destroy", ["destroysomething"])
-        actions = replace(actions, "drink", ["drinking"])
-        actions = replace(actions, "eat", ["eating"])
-        actions = replace(actions, "hold", ["cup", "hodlingabottle", "holdingabottle", "holdingacup", "holdingajacket", "holdingapaper", "holdingatelephone", "holdingnewspaper", "holdingpaper", "holdingsomething", "holdsomething"])
-        actions = replace(actions, "dance", ["dance", "dancing", "danicng"])
-        actions = replace(actions, "find", ["findingsomething", "findsomething"])
-        actions = replace(actions, "highfive", ["high-five", "highfive"])
-        actions = replace(actions, "hug", ["hugging"])
-        actions = replace(actions, "kiss", ["kissing"])
-        actions = replace(actions, "lookbackat", ["lookbackat"])
-        actions = replace(actions, "nod", ["nodding"])
-        actions = replace(actions, "None", ["none", "nonoe"])
-        actions = replace(actions, "opendoor", ["openingdoor"])
-        actions = replace(actions, "playguitar", ["playingguitar"])
-        actions = replace(actions, "pointout", ["pointingout"])
-        actions = replace(actions, "pushaway", ["pushingaway", "pusingaway"])
-        actions = replace(actions, "putarmsaroundshoulder", ["puttingarmsaroundeachother'sshoulder", "puttingarmsaroundeachother?'sshoulder"])
-        actions = replace(actions, "shakehands", ["shakinghands"])
-        actions = replace(actions, "sing", ["singing"])
-        actions = replace(actions, "sit", ["sittingdown", "sittingon"])
-        actions = replace(actions, "smoke", ["smoking"])
-        actions = replace(actions, "standup", ["standing", "standingup"])
-        actions = replace(actions, "walk", ["walking"])
-        actions = replace(actions, "watch", ["watching", "watchingtv"])
-        actions = replace(actions, "wavehands", ["wavinghands"])
-        actions = replace(actions, "wearlipstick", ["wearinglipstick"])
-        """
-
-        actions = replace(actions, "0", ["call", "phonecall"])
-        actions = replace(actions, "1", ["cleaningup"])
-        actions = replace(actions, "2", ["cooking"])
-        actions = replace(actions, "3", ["cutting"])
-        actions = replace(actions, "4", ["destroysomething"])
-        actions = replace(actions, "5", ["drinking"])
-        actions = replace(actions, "6", ["eating"])
-        actions = replace(actions, "7", ["cup", "hodlingabottle", "holdingabottle", "holdingacup", "holdingajacket", "holdingapaper", "holdingatelephone", "holdingnewspaper", "holdingpaper", "holdingsomething", "holdsomething"])
-        actions = replace(actions, "8", ["dance", "dancing", "danicng"])
-        actions = replace(actions, "9", ["findingsomething", "findsomething"])
-        actions = replace(actions, "10", ["high-five", "highfive"])
-        actions = replace(actions, "11", ["hugging"])
-        actions = replace(actions, "12", ["kissing"])
-        actions = replace(actions, "13", ["lookbackat"])
-        actions = replace(actions, "14", ["nodding"])
-        actions = replace(actions, "15", ["none", "nonoe"])
-        actions = replace(actions, "16", ["openingdoor"])
-        actions = replace(actions, "17", ["playingguitar"])
-        actions = replace(actions, "18", ["pointingout"])
-        actions = replace(actions, "19", ["pushingaway", "pusingaway"])
-        actions = replace(actions, "20", ["puttingarmsaroundeachother'sshoulder", "puttingarmsaroundeachother?'sshoulder"])
-        actions = replace(actions, "21", ["shakinghands"])
-        actions = replace(actions, "22", ["singing"])
-        actions = replace(actions, "23", ["sittingdown", "sittingon"])
-        actions = replace(actions, "24", ["smoking"])
-        actions = replace(actions, "25", ["standing", "standingup"])
-        actions = replace(actions, "26", ["walking"])
-        actions = replace(actions, "27", ["watching", "watchingtv"])
-        actions = replace(actions, "28", ["wavinghands"])
-        actions = replace(actions, "29", ["wearinglipstick"])
-
-        actions = list(set(actions))
-
-        if "15" in actions and len(actions) > 1:
-            actions.remove("15")
-        return actions
+        if "15" in action_indices and len(action_indices) > 1:
+            action_indices.remove("15")
+        return action_indices
 
     import os
     import numpy as np
@@ -194,7 +134,7 @@ def list_video_action():
     episodes = [i for i in range(1, 11)]
     n_train_episodes = int(len(episodes) * TRAIN_RATIO)
     train_episodes = episodes[:n_train_episodes]
-    test_episodes = episodes[:n_train_episodes]
+    test_episodes = episodes[n_train_episodes:]
 
 
     """ Group frame-action pairs into train & test set """
@@ -203,9 +143,10 @@ def list_video_action():
 
     train_video_action_dict = defaultdict(lambda: [])
     for episode in train_episodes:
+        episode_video_action_list = []
         with open("data/actions/S01_E{:02d}.json".format(episode), 'r') as fin:
             frame_action_dict = json.load(fin)
-        frame_action_list = [ (frame, frame_action_dict[frame]) for frame in sorted(frame_action_dict) ]
+        frame_action_list = [ (frame, frame_action_dict[frame]) for frame in sorted(frame_action_dict, key=lambda frame: int(frame)) ]
         video_dname = next((dname for dname in video_dnames if dname.startswith("1x{:02d}".format(episode))), None)
         video_dpath = "data/friends/{}".format(video_dname)
         for frame, actions in frame_action_list:
@@ -214,12 +155,17 @@ def list_video_action():
             total_actions.append(np.asarray(actions, dtype=int))
 
             video_fname = "{:05d}.jpg".format(int(frame)+1)
-            actions = ",".join(actions)
+            actions = ",".join([ str(action) for action in actions ])
             video_action_string = "{}\t{}\t{}".format(video_dpath, video_fname, actions)
             train_video_action_dict[actions].append(video_action_string)
+            episode_video_action_list.append(video_action_string)
+        with open("list/friends_train_s01_e{:02d}.list".format(episode), "w") as fout:
+            episode_video_action_string = "\n".join(episode_video_action_list)
+            fout.write(episode_video_action_string)
 
     test_video_action_dict = defaultdict(lambda: [])
     for episode in test_episodes:
+        episode_video_action_list = []
         with open("data/actions/S01_E{:02d}.json".format(episode), 'r') as fin:
             frame_action_dict = json.load(fin)
         frame_action_list = [ (frame, frame_action_dict[frame]) for frame in sorted(frame_action_dict) ]
@@ -231,9 +177,13 @@ def list_video_action():
             total_actions.append(np.asarray(actions, dtype=int))
 
             video_fname = "{:05d}.jpg".format(int(frame)+1)
-            actions = ",".join(actions)
+            actions = ",".join([ str(action) for action in actions ])
             video_action_string = "{}\t{}\t{}".format(video_dpath, video_fname, actions)
             test_video_action_dict[actions].append(video_action_string)
+            episode_video_action_list.append(video_action_string)
+        with open("list/friends_test_s01_e{:02d}.list".format(episode), "w") as fout:
+            episode_video_action_string = "\n".join(episode_video_action_list)
+            fout.write(episode_video_action_string)
 
 
     """ Log statistics of total actions """
@@ -252,11 +202,10 @@ def list_video_action():
         train_video_action_list += video_action_strings[:n_data]
 
     test_video_action_list = []
-    for action, video_action_strings in train_video_action_dict.items():
+    for action, video_action_strings in test_video_action_dict.items():
         np.random.shuffle(video_action_strings)
         n_data = min(N_MAX_DATA_PER_ACTION, len(video_action_strings))
         test_video_action_list += video_action_strings[:n_data]
-
 
     """ Save frame-action pairs """
     np.random.shuffle(train_video_action_list)
