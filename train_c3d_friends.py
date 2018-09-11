@@ -46,13 +46,13 @@ flags.DEFINE_integer('max_steps', 5000, 'Number of steps to run trainer.')
 flags.DEFINE_integer('batch_size', 20, 'Batch size.')
 FLAGS = flags.FLAGS
 MOVING_AVERAGE_DECAY = 0.9999
-MODEL_TAG = "friends/person_bbox"
+MODEL_TAG = "friends/full"
 MODEL_SAVE_DPATH = './models/{}'.format(MODEL_TAG)
 LOG_DPATH =  "./visual_logs/{}".format(MODEL_TAG)
 TRAIN_DATA_FPATH = "./list/friends_train.list"
 TEST_DATA_FPATH = "./list/friends_test.list"
 USE_CACHED = True
-USE_PERSON_BBOX = True
+USE_PERSON_BBOX = False
 
 
 with open("./data/index_action.json", "r") as fin:
@@ -341,46 +341,45 @@ def run_training():
                     }
                 )
                 print("Train acc.: {:.5f}".format(acc), end="")
+                precision, recall, f1score = calc_metrics(preds, train_labels)
                 pred_summary = pred_real_to_table(preds, train_labels)
                 if USE_PERSON_BBOX:
                     gif_summary = clip_summary_with_text(train_clips[0], train_labels[0], preds[0])
                 else:
                     gif_summary = clip_summary_with_text(train_clips[0] + crop_mean, train_labels[0], preds[0])
                 train_logger.scalar_summary("accuracy", acc, step)
+                train_logger.scalar_summary("precision", precision, step)
+                train_logger.scalar_summary("recall", recall, step)
+                train_logger.scalar_summary("f1score", f1score, step)
                 train_logger.text_summary("prediction", pred_summary, step)
                 train_logger.gif_summary("clip", gif_summary, step)
 
 
                 """ Log test summary """
-                t_preds = None
-                t_actuals = None
-                for _ in range(10):
-                    test_clips, test_labels, test_start_pos, test_metadata = input_data.read_clip_and_label(
-                        metadata_fpath=TEST_DATA_FPATH,
-                        batch_size=FLAGS.batch_size * N_GPU,
-                        start_pos=test_start_pos,
-                        num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
-                        crop_size=c3d_model.CROP_SIZE,
-                        shuffle=False,
-                        use_cached=USE_CACHED,
-                        use_person_bbox=USE_PERSON_BBOX,
-                    )
-                    summary, preds, acc = sess.run(
-                        [merged, logits, accuracy],
-                        feed_dict={
-                            images_placeholder: test_clips,
-                            labels_placeholder: test_labels,
-                        }
-                    )
-                    t_preds = preds if t_preds is None else np.vstack([t_preds, preds])
-                    t_actuals = test_labels if t_actuals is None else np.vstack([t_actuals, test_labels])
-                precision, recall, f1score = calc_metrics(t_preds, t_actuals)
+                test_clips, test_labels, test_start_pos, test_metadata = input_data.read_clip_and_label(
+                    metadata_fpath=TEST_DATA_FPATH,
+                    batch_size=FLAGS.batch_size * N_GPU,
+                    start_pos=test_start_pos,
+                    num_frames_per_clip=c3d_model.NUM_FRAMES_PER_CLIP,
+                    crop_size=c3d_model.CROP_SIZE,
+                    shuffle=False,
+                    use_cached=USE_CACHED,
+                    use_person_bbox=USE_PERSON_BBOX,
+                )
+                summary, preds, acc = sess.run(
+                    [merged, logits, accuracy],
+                    feed_dict={
+                        images_placeholder: test_clips,
+                        labels_placeholder: test_labels,
+                    }
+                )
                 print("\tTest acc.: {:.5f}".format(acc))
-                pred_summary = pred_real_to_table(t_preds, t_actuals)
+                precision, recall, f1score = calc_metrics(preds, test_labels)
+                pred_summary = pred_real_to_table(preds, test_labels)
                 if USE_PERSON_BBOX:
-                    gif_summary = clip_summary_with_text(test_clips[0], test_labels[0], t_preds[0])
+                    gif_summary = clip_summary_with_text(test_clips[0], test_labels[0], preds[0])
                 else:
-                    gif_summary = clip_summary_with_text(test_clips[0] + crop_mean, test_labels[0], t_preds[0])
+                    gif_summary = clip_summary_with_text(test_clips[0] + crop_mean, test_labels[0], preds[0])
                 test_logger.scalar_summary("accuracy", acc, step)
                 test_logger.scalar_summary("precision", precision, step)
                 test_logger.scalar_summary("recall", recall, step)
