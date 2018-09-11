@@ -121,8 +121,8 @@ def list_video_action():
             action_indices.append(action_index_dict[action])
         action_indices = list(set(action_indices))
 
-        if "15" in action_indices and len(action_indices) > 1:
-            action_indices.remove("15")
+        if 15 in action_indices and len(action_indices) > 1:
+            action_indices.remove(15)
         return action_indices
 
     import os
