@@ -38,7 +38,7 @@ def extract_actions_per_frame(episode):
     num_frames = len(jdata['visual_results'])
     time_parser = parse.compile("{hour:d}:{minute:d}:{second:d};{frame:d}")
     frame_action_dict = {}
-    for frame in range(0, num_frames, 3 * 8): # 3 for removing redundant action labeling & 8 from C3D paper
+    for frame in range(0, num_frames, 3): # 3 for removing redundant action labeling
         start_time_string = jdata['visual_results'][frame]['start_time']
         s = time_parser.parse(start_time_string)
         s_time_frm = int((s["hour"] * 3600 + s["minute"] * 60 + s["second"] + s["frame"]/24.0) * FPS)
@@ -168,7 +168,7 @@ def list_video_action():
         episode_video_action_list = []
         with open("data/actions/S01_E{:02d}.json".format(episode), 'r') as fin:
             frame_action_dict = json.load(fin)
-        frame_action_list = [ (frame, frame_action_dict[frame]) for frame in sorted(frame_action_dict) ]
+        frame_action_list = [ (frame, frame_action_dict[frame]) for frame in sorted(frame_action_dict, key=lambda frame: int(frame)) ]
         video_dname = next((dname for dname in video_dnames if dname.startswith("1x{:02d}".format(episode))), None)
         video_dpath = "data/friends/{}".format(video_dname)
         for frame, actions in frame_action_list:

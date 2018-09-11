@@ -20,7 +20,8 @@ do
     for file in "$folder"/*.avi
     do
         if [[ ! -d "${file[@]%.avi}" ]]; then
-            mkdir -p "${file[@]%.avi}"
+            #mkdir -p "${file[@]%.avi}"
+	    mkdir -p "${file[@]%.avi}"
         fi
         ffmpeg -i "$file" -vf fps=$2 "${file[@]%.avi}"/%05d.jpg
         rm "$file"
