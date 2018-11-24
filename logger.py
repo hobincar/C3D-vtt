@@ -15,7 +15,7 @@ class Logger(object):
         """Create a summary writer logging to log_dir."""
         self.writer = tf.summary.FileWriter(log_dir, max_queue=max_queue)
 
-    def text_summary(self, tag, text, step):
+    def text(self, tag, text, step):
         """Log text."""
         text_tensor = tf.make_tensor_proto(text, dtype=tf.string)
         meta = tf.SummaryMetadata()
@@ -24,12 +24,12 @@ class Logger(object):
         summary.value.add(tag=tag, metadata=meta, tensor=text_tensor)
         self.writer.add_summary(summary, step)
 
-    def scalar_summary(self, tag, value, step):
+    def scalar(self, tag, value, step):
         """Log a scalar variable."""
         summary = tf.Summary(value=[tf.Summary.Value(tag=tag, simple_value=value)])
         self.writer.add_summary(summary, step)
 
-    def image_summary(self, tag, images, step):
+    def image(self, tag, images, step):
         """Log a list of images."""
 
         img_summaries = []
@@ -49,7 +49,7 @@ class Logger(object):
         summary = tf.Summary(value=img_summaries)
         self.writer.add_summary(summary, step)
 
-    def gif_summary(self, tag, images, step, fps=5):
+    def gif(self, tag, images, step, fps=5):
         """ Given a 4D numpy tensor of images, log as a gif. """
         with tempfile.NamedTemporaryFile() as f: fname = f.name + '.gif'
         clip = mpy.ImageSequenceClip(list(images), fps=fps)
@@ -69,7 +69,7 @@ class Logger(object):
         # summ_str = summ.SerializeToString()
         self.writer.add_summary(summary, step)
 
-    def histo_summary(self, tag, values, step, bins=1000):
+    def histo(self, tag, values, step, bins=1000):
         """Log a histogram of the tensor of values."""
 
         # Create a histogram using numpy

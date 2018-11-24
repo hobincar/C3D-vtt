@@ -1,0 +1,14 @@
+load_meta_friends.py
+preprocess
+run.py
+visual_logs
+demo
+data
+friends
+logs
+**/__pycache__
+models
+video
+**/*.swp
+.env
+.ipynb_checkpoints
