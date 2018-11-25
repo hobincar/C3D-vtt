@@ -162,6 +162,8 @@ def clip_summary_with_text(clip, actual, pred):
     actual_labels = np.where(actual == 1)[0]
     pred = np.exp(pred) / sum(np.exp(pred))
     pred_labels = np.where(pred > 0.5)[0]
+    if len(pred_labels) == 0:
+        pred_labels =  [ np.argmax(pred) ]
     for frame in padded_clip:
         actual_actions = [idx2rep[str(a)] for a in actual_labels]
         cv2.putText(
