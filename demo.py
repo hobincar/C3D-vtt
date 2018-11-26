@@ -7,35 +7,59 @@ from tqdm import tqdm
 from config import DemoConfig as C
 
 
-def generate_frame(season, episode, frame_number, ground_truths, actions, height, width, layers):
+def generate_frame(season, episode, frame_number, ground_truths, actions, pane_width):
     frame_fpath = C.frame_fpath_tpl.format(season, episode, frame_number)
     frame = cv2.imread(frame_fpath)
 
-    predictions = [ action for action, score in actions ]
+    h, w, c = frame.shape
 
-    # PRED & ACTUAL
-    TEXT_HEIGHT = 200
-    cv2.putText(
+    pane_width = 1000
+    height_block = h // 8
+    margin_left = 40
+    text_width = 350
+    bar_width = 450
+    frame = cv2.copyMakeBorder(frame, 0, 0, 0, pane_width, cv2.BORDER_CONSTANT, None, (0, 0, 0))
+    frame = cv2.putText(
         frame,
-        text="Ground Truth: {}".format(", ".join(ground_truths)),
-        org=(0, (TEXT_HEIGHT - 5) // 2),
+        text="Ground truth: {}".format(", ".join(ground_truths)),
+        org=(w + margin_left, height_block),
         fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-        fontScale=2,
-        color=(255, 0, 0),
-        thickness=4,
-    )
-    cv2.putText(
-        frame,
-        text="Prediction: {}".format(", ".join(predictions)),
-        org=(0, TEXT_HEIGHT - 5),
-        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-        fontScale=2,
-        color=(0, 0, 255),
-        thickness=4,
-    )
+        fontScale=1,
+        color=(0, 255, 0),
+        thickness=3)
+    sorted_actions = sorted(actions, key=lambda e: -e[1])
+    for i, (action, score) in enumerate(sorted_actions, 3):
+        if score < 0.01: break
+        high_probability = score > 0.5
 
+        frame = cv2.putText(
+            frame,
+            text=action,
+            org=(w + margin_left, height_block * i),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=1,
+            color=(0, 0, 255) if high_probability else (255, 255, 255),
+            thickness=3)
+        frame = cv2.rectangle(
+            frame,
+            pt1=( w + margin_left + text_width, int(height_block * (i - 0.35)) ),
+            pt2=( w + margin_left + text_width + bar_width, int(height_block * (i + 0.05)) ),
+            color=(0, 0, 255) if high_probability else (255, 255, 255))
+        frame = cv2.rectangle(
+            frame,
+            pt1=( w + margin_left + text_width, int(height_block * (i - 0.35)) ),
+            pt2=( w + margin_left + text_width + int(bar_width * score), int(height_block * (i + 0.05)) ),
+            color=(0, 0, 255) if high_probability else (255, 255, 255),
+            thickness=cv2.FILLED)
+        frame = cv2.putText(
+            frame,
+            text="{:.2f}".format(score),
+            org=(w + margin_left + text_width + bar_width + margin_left, height_block * i),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=1,
+            color=(0, 0, 255) if high_probability else (255, 255, 255),
+            thickness=3)
     return frame
-
 
 
 def generate_demo(season, episode):
@@ -52,13 +76,14 @@ def generate_demo(season, episode):
 
     demo_fpath = C.demo_fpath_tpl.format(season, episode)
     fourcc = cv2.VideoWriter_fourcc("m", "p", "4", "v")
-    vout = cv2.VideoWriter(demo_fpath, apiPreference=0, fourcc=fourcc, fps=5, frameSize=(width, height))
+    pane_width = 1000
+    vout = cv2.VideoWriter(demo_fpath, apiPreference=0, fourcc=fourcc, fps=5, frameSize=(width + pane_width, height))
     for pred in prediction_results:
         frame_number = pred["frame"]
         ground_truths = pred["ground_truths"]
         actions = pred["actions"]
         
-        frame = generate_frame(season, episode, frame_number, ground_truths, actions, height, width, layers)
+        frame = generate_frame(season, episode, frame_number, ground_truths, actions, pane_width)
         vout.write(frame)
     vout.release()
 

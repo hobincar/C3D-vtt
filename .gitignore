@@ -7,3 +7,4 @@ models
 .env
 .ipynb_checkpoints
 outputs/demos
+pretrained_models

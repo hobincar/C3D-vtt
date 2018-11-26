@@ -123,13 +123,10 @@ def pred_real_to_table(preds, reals, prefix=""):
         [ "real", "pred" ],
     ]
     for i, (pred, real) in enumerate(zip(preds, reals), 1):
-        # n_label = (real == 1).sum()
         real_label_indices = np.where(real == 1)[0]
         real_label_indices = ", ".join([ str(i) for i in real_label_indices ])
-        # pred_softmax = (np.e ** pred) / (np.e ** pred).sum()
         pred_sigmoid = 1 / (1 + np.exp(-pred))
         pred_label_indices = np.argsort(-pred)[:TOP_K]
-        # pred_label_indices = ", ".join([ "{}({:.2f})".format(i, pred_softmax[i]) for i in pred_label_indices ])
         pred_label_indices = ", ".join([ "{}({:.2f})".format(i, pred_sigmoid[i]) for i in pred_label_indices ])
         lines.append([ real_label_indices, pred_label_indices ])
     return lines

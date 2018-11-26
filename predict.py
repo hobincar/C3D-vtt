@@ -102,7 +102,7 @@ def run_test():
                 biases)
             logits.append(logit)
     logits = tf.concat(logits, 0)
-    norm_scores = tf.nn.softmax(logits)
+    norm_scores = tf.nn.sigmoid(logits)
 
     config = tf.ConfigProto()
     config.allow_soft_placement=True
@@ -157,10 +157,10 @@ def run_test():
                     result["actions"] = actions
     
                     results.append(result)
-        
+            episode_id = "S{:02d}_EP{:02d}".format(season, episode)
             result = {
-                "file_name": "{}.json".format(episode),
-                "registed_name": "{}.json".format(episode),
+                "file_name": "{}.json".format(episode_id),
+                "registed_name": "{}.json".format(episode_id),
                 "prediction_results": results,
             }
             result_fpath = C.prediction_fpath_tpl.format(season, episode)

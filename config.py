@@ -105,7 +105,7 @@ class PredConfig(CommonConfig):
     n_iterations = 60000
     model_fpath = os.path.join(CommonConfig.model_root_dpath, model_name, "model-{}".format(n_iterations))
 
-    topk = 3
+    topk = 5
 
 
 class DemoConfig(CommonConfig):
