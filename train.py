@@ -1,20 +1,3 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#         http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-
-"""Trains and Evaluates the MNIST network using a feed dictionary."""
-# pylint: disable=missing-docstring
 import json
 import os
 
@@ -24,11 +7,11 @@ import tensorflow as tf
 
 import c3d_model
 from config import TrainConfig as C
-from dataset import load_dataset
+from dataset import load_train_dataset, load_test_dataset
 from logger import Logger
 
 
-# Basic model parameters as external flags.
+# Basic model parameters
 GPU_LIST = [ int(i) for i in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
 N_GPU = len(GPU_LIST)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
@@ -206,24 +189,97 @@ def test_log(clips, preds, gts, step):
     summary_writer.scalar("test/recall", recall, step)
     summary_writer.scalar("test/f1score", f1score, step)
     summary_writer.text("test/prediction", pred_summary, step)
-    clip_postfix = "{} ~ {}".format(step / C.test_log_every // 10 * 10, step / C.test_log_every // 10 * 10 * 2 - 1)
-    summary_writer.gif("test/clip/{}".format(clip_postfix), gif_summary, step)
+    clip_from = step // C.test_log_every // 10 * C.test_log_every * 10
+    clip_to = (step // C.test_log_every // 10 + 1) * C.test_log_every * 10
+    summary_writer.gif("test/clip/{} ~ {}".format(clip_from, clip_to), gif_summary, step)
+
+
+def build_train_model(weights, biases):
+    global_step = tf.get_variable(
+        'global_step',
+        [],
+        initializer=tf.constant_initializer(0),
+        trainable=False
+    )
+
+    images_placeholder, labels_placeholder = placeholder_inputs()
+    tower_grads_stable = []
+    tower_grads_finetune = []
+    logits = []
+    opt_stable = tf.train.AdamOptimizer(C.lr_stable)
+    opt_finetuning = tf.train.AdamOptimizer(C.lr_finetune)
+
+    for i, gpu_index in enumerate(GPU_LIST):
+        with tf.device('/gpu:%d' % gpu_index):
+            varlist_finetune = [ weights['out'], biases['out'] ]
+            varlist_stable = list( set(list(weights.values()) + list(biases.values())) - set(varlist_finetune) )
+            logit, _ = c3d_model.inference_c3d(
+                _X=images_placeholder[i * C.batch_size:(i + 1) * C.batch_size, :, :, :, :],
+                _dropout=0.5,
+                batch_size=C.batch_size,
+                _weights=weights,
+                _biases=biases)
+            cross_entropy_loss, weight_decay_loss, loss = tower_loss(
+                logits=logit,
+                labels=labels_placeholder[i * C.batch_size:(i + 1) * C.batch_size])
+
+            grads_stable = opt_stable.compute_gradients(loss, varlist_stable)
+            grads_finetune = opt_finetuning.compute_gradients(loss, varlist_finetune)
+            tower_grads_stable.append(grads_stable)
+            tower_grads_finetune.append(grads_finetune)
+            logits.append(logit)
+    logits = tf.concat(logits, 0)
+    accuracy = tower_acc(logits, labels_placeholder)
+    grads_stable = average_gradients(tower_grads_stable)
+    grads_finetune = average_gradients(tower_grads_finetune)
+    apply_gradient_stable = opt_stable.apply_gradients(grads_stable)
+    apply_gradient_finetune = opt_finetuning.apply_gradients(grads_finetune, global_step=global_step)
+    variable_averages = tf.train.ExponentialMovingAverage(C.moving_average_decay)
+    variables_averages_op = variable_averages.apply(tf.trainable_variables())
+    train_op = tf.group(apply_gradient_stable, apply_gradient_finetune, variables_averages_op)
+
+    return {
+        "varlist_stable": varlist_stable,
+        "varlist_finetune": varlist_finetune,
+        "images_placeholder": images_placeholder,
+        "labels_placeholder": labels_placeholder,
+        "logits": logits,
+        "accuracy": accuracy,
+        "loss": loss,
+        "train_op": train_op,
+    }
+
+
+def build_test_model(weights, biases):
+    images_placeholder, labels_placeholder = placeholder_inputs()
+    logits = []
+    for i, gpu_index in enumerate(GPU_LIST):
+        with tf.device('/gpu:%d' % gpu_index):
+            logit, _ = c3d_model.inference_c3d(
+                _X=images_placeholder[i * C.batch_size:(i + 1) * C.batch_size, :, :, :, :],
+                _dropout=1,
+                batch_size=C.batch_size,
+                _weights=weights,
+                _biases=biases)
+            cross_entropy_loss, weight_decay_loss, loss = tower_loss(
+                logits=logit,
+                labels=labels_placeholder[i * C.batch_size:(i + 1) * C.batch_size])
+
+            logits.append(logit)
+    logits = tf.concat(logits, 0)
+    accuracy = tower_acc(logits, labels_placeholder)
+
+    return {
+        "images_placeholder": images_placeholder,
+        "labels_placeholder": labels_placeholder,
+        "logits": logits,
+        "accuracy": accuracy,
+        "loss": loss,
+    }
 
 
 def run_training():
     with tf.Graph().as_default():
-        global_step = tf.get_variable(
-            'global_step',
-            [],
-            initializer=tf.constant_initializer(0),
-            trainable=False
-        )
-        images_placeholder, labels_placeholder = placeholder_inputs()
-        tower_grads_stable = []
-        tower_grads_finetune = []
-        logits = []
-        opt_stable = tf.train.AdamOptimizer(C.lr_stable)
-        opt_finetuning = tf.train.AdamOptimizer(C.lr_finetune)
         with tf.variable_scope('var_name') as var_scope:
             weights = {
                 'wc1': _variable_with_weight_decay('wc1', [3, 3, 3, 3, 64], 0.0005),
@@ -256,35 +312,8 @@ def run_training():
         # crop_mean = crop_mean.reshape([C.n_frames_per_clip, C.crop_size, C.crop_size, 3])
 
         # Build model
-        for i, gpu_index in enumerate(GPU_LIST):
-            with tf.device('/gpu:%d' % gpu_index):
-                varlist_finetune = [ weights['out'], biases['out'] ]
-                varlist_stable = list( set(list(weights.values()) + list(biases.values())) - set(varlist_finetune) )
-                logit, _ = c3d_model.inference_c3d(
-                    _X=images_placeholder[i * C.batch_size:(i + 1) * C.batch_size, :, :, :, :],
-                    _dropout=0.5,
-                    batch_size=C.batch_size,
-                    _weights=weights,
-                    _biases=biases)
-                cross_entropy_loss, weight_decay_loss, loss = tower_loss(
-                    logits=logit,
-                    labels=labels_placeholder[i * C.batch_size:(i + 1) * C.batch_size])
-
-                grads_stable = opt_stable.compute_gradients(loss, varlist_stable)
-                grads_finetune = opt_finetuning.compute_gradients(loss, varlist_finetune)
-                tower_grads_stable.append(grads_stable)
-                tower_grads_finetune.append(grads_finetune)
-                logits.append(logit)
-        logits = tf.concat(logits, 0)
-        accuracy = tower_acc(logits, labels_placeholder)
-        tf.summary.scalar('accuracy', accuracy)
-        grads_stable = average_gradients(tower_grads_stable)
-        grads_finetune = average_gradients(tower_grads_finetune)
-        apply_gradient_stable = opt_stable.apply_gradients(grads_stable)
-        apply_gradient_finetune = opt_finetuning.apply_gradients(grads_finetune, global_step=global_step)
-        variable_averages = tf.train.ExponentialMovingAverage(C.moving_average_decay)
-        variables_averages_op = variable_averages.apply(tf.trainable_variables())
-        train_op = tf.group(apply_gradient_stable, apply_gradient_finetune, variables_averages_op)
+        train_model = build_train_model(weights, biases)
+        test_model = build_test_model(weights, biases)
 
 
         # Create a session for running Ops on the Graph.
@@ -297,13 +326,13 @@ def run_training():
         saver = tf.train.Saver(list(weights.values()) + list(biases.values()))
 
         # Load train dataset
-        train_dataset = load_dataset(C.train_data_fpath, N_GPU * C.batch_size)
+        train_dataset = load_train_dataset(C.train_data_fpath, N_GPU * C.batch_size)
         train_iterator = train_dataset.make_initializable_iterator()
         train_next_batch = train_iterator.get_next()
         sess.run(train_iterator.initializer)
 
         # Load test dataset
-        test_dataset = load_dataset(C.test_data_fpath, N_GPU * C.batch_size)
+        test_dataset = load_test_dataset(C.test_data_fpath, N_GPU * C.batch_size, shuffle=True, repeat=True)
         test_iterator = test_dataset.make_initializable_iterator()
         test_next_batch = test_iterator.get_next()
         sess.run(test_iterator.initializer)
@@ -311,7 +340,7 @@ def run_training():
         # Load a pretrained model (if exists)
         if C.use_pretrained_model:
             variables = list(weights.values()) + list(biases.values())
-            restorer = tf.train.Saver(varlist_stable)
+            restorer = tf.train.Saver(train_model["varlist_stable"])
             restorer.restore(sess, C.pretrained_model_fpath)
 
         # Initialize
@@ -321,19 +350,19 @@ def run_training():
         # Train
         for step in range(1, C.n_iterations + 1):
             train_clips, train_labels = sess.run(train_next_batch)
-            sess.run(train_op, feed_dict={
-                images_placeholder: train_clips,
-                labels_placeholder: train_labels,
+            sess.run(train_model["train_op"], feed_dict={
+                train_model["images_placeholder"]: train_clips,
+                train_model["labels_placeholder"]: train_labels,
             })
 
             # Log train
             if step % C.train_log_every == 0:
                 train_clips, train_labels = sess.run(train_next_batch)
                 preds, acc, loss_val = sess.run(
-                    [logits, accuracy, loss],
+                    [train_model["logits"], train_model["accuracy"], train_model["loss"]],
                     feed_dict={
-                        images_placeholder: train_clips,
-                        labels_placeholder: train_labels,
+                        train_model["images_placeholder"]: train_clips,
+                        train_model["labels_placeholder"]: train_labels,
                     })
                 loss_val = np.mean(loss_val)
                 print("Train acc.: {:.3f}\tloss: {:.3f}".format(acc, loss_val))
@@ -344,12 +373,12 @@ def run_training():
 
             # Log test
             if step % C.test_log_every == 0:
-                test_clips, test_labels = sess.run(test_next_batch)
+                test_clips, test_labels, _ = sess.run(test_next_batch)
                 preds, acc, loss_val = sess.run(
-                    [logits, accuracy, loss],
+                    [test_model["logits"], test_model["accuracy"], test_model["loss"]],
                     feed_dict={
-                        images_placeholder: test_clips,
-                        labels_placeholder: test_labels,
+                        test_model["images_placeholder"]: test_clips,
+                        test_model["labels_placeholder"]: test_labels,
                     })
                 loss_val = np.mean(loss_val)
                 print("Test acc.: {:.3f}\t loss: {:.3f}".format(acc, loss_val))
