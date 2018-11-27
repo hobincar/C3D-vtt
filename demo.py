@@ -21,7 +21,7 @@ def generate_frame(season, episode, frame_number, ground_truths, actions, pane_w
     frame = cv2.copyMakeBorder(frame, 0, 0, 0, pane_width, cv2.BORDER_CONSTANT, None, (0, 0, 0))
     frame = cv2.putText(
         frame,
-        text="Ground truth: {}".format(", ".join(ground_truths)),
+        text="Ground truth: {}".format("-" if len(ground_truths) == 0 else ", ".join(ground_truths)),
         org=(w + margin_left, height_block),
         fontFace=cv2.FONT_HERSHEY_SIMPLEX,
         fontScale=1,

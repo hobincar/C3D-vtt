@@ -111,6 +111,9 @@ def run_test():
     init = tf.global_variables_initializer()
     sess.run(init)
 
+    saver = tf.train.Saver()
+    saver.restore(sess, C.model_fpath)
+
     os.makedirs(C.prediction_dpath, exist_ok=True)
     pbar = tqdm(total=sum([ len(episodes) for episodes in C.episodes_list ]))
     for season, episodes in zip(C.seasons, C.episodes_list):
@@ -122,7 +125,6 @@ def run_test():
     
             # Load train dataset
             dataset = load_test_dataset(list_file_fpath, N_GPU * C.batch_size, shuffle=False, repeat=False)
-            # dataset = load_train_dataset(list_file_fpath, N_GPU * C.batch_size)
             iterator = dataset.make_initializable_iterator()
             next_batch = iterator.get_next()
             sess.run(iterator.initializer)
@@ -130,7 +132,6 @@ def run_test():
             while True:
                 try:
                     clips, labels, frames = sess.run(next_batch)
-                    # clips, labels = sess.run(next_batch)
                 except tf.errors.OutOfRangeError:
                     break
                 frames = frames.tolist()
@@ -138,7 +139,7 @@ def run_test():
                 predict_scores = norm_scores.eval(
                     session=sess,
                     feed_dict={ images_placeholder: clips })
-    
+
                 topk_idxs = np.argsort(predict_scores, axis=1)[:, -C.topk:]
                 topk_scores = np.take(predict_scores, topk_idxs)
                 topk_scores = topk_scores.tolist()

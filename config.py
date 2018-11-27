@@ -49,6 +49,7 @@ class CommonConfig:
         rep2sta = json.load(fin)
     n_actions = len(idx2rep)
     actions = list(idx2rep.values())
+    action_labels = list(idx2rep.keys())
 
     fps_used_to_extract_frames = 5.07
     n_frames_per_clip = 16
@@ -101,8 +102,8 @@ class TrainConfig(CommonConfig):
 
 
 class PredConfig(CommonConfig):
-    model_name = "C3D | lr-st-1e-05-fn-0.0001 | pt-sports1m_finetuning_ucf101 | 181125-07:15:25"
-    n_iterations = 60000
+    model_name = "C3D | lr-st-1e-05-fn-0.0001 | pt-None | 181126-13:22:31"
+    n_iterations = 40000
     model_fpath = os.path.join(CommonConfig.model_root_dpath, model_name, "model-{}".format(n_iterations))
 
     topk = 5

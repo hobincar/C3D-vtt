@@ -10,6 +10,7 @@ import random
 random.seed(42)
 
 import parse
+from tqdm import tqdm
 
 from config import ListConfig as C
 
@@ -65,6 +66,7 @@ def parse_annotation(annotation):
         action = info["behavior"]
         if action in C.act2idx:
             action_index = C.act2idx[action]
+            action_index = str(action_index)
             labels.append(action_index)
     labels = list(set(labels))
     
@@ -75,6 +77,19 @@ def get_endpoints_from_median_frame(median_frame):
     start_frame = median_frame - C.n_front
     end_frame = median_frame + C.n_back
     return start_frame, end_frame
+
+
+def remove_duplicates(lst):
+    remove_dups = {}
+    for ep, s, e, ls in lst:
+        id = "{}_{}".format(ep, s)
+        if id in remove_dups:
+            dup_ep, dup_s, dup_e, dup_ls = remove_dups[id]
+            assert dup_e == e
+            ls = list(set( ls + dup_ls ))
+        remove_dups[id] = ( ep, s, e, ls )
+    new_lst = list(remove_dups.values())
+    return new_lst
 
 
 def get_total_list():
@@ -103,19 +118,20 @@ def get_total_list():
                     if start_frame < 1: continue
                     if end_frame > terminal_frame: continue
                     total_list.append(( episode, start_frame, end_frame, labels ))
+    total_list = remove_duplicates(total_list)
     return total_list
 
 
 def split_list(total_list):
     # Get the indices of total list according to an action index.
-    actionLabel_listIdxs_dict = { label: [] for label in C.actions }
+    actionLabel_listIdxs_dict = { label: [] for label in C.action_labels }
     for i, d in enumerate(total_list):
         _, _, _, labels = d
         for label in labels:
             actionLabel_listIdxs_dict[label].append(i)
 
     # Sort action labels along its n_clips.
-    sorted_actions = sorted(C.actions, key=lambda l: C.rep2sta[C.idx2rep[str(l)]]["n_clips"])
+    sorted_actions = sorted(C.action_labels, key=lambda l: C.rep2sta[C.idx2rep[str(l)]]["n_clips"])
 
     already_taken = [ False for _ in range(len(total_list)) ]
     train_idxs = []
@@ -158,14 +174,11 @@ def get_episode_list(season, episode):
             if end > terminal_frame: continue
             episode_list.append((
                 "S{:02d}_EP{:02d}".format(season, episode),
-                str(start),
-                str(end),
-                ','.join([ str(label) for label in labels ]) ))
-
-    remove_dups = {}
-    for ep, s, e, ls in episode_list:
-        remove_dups[s] = ( ep, s, e, ls )
-    episode_list = list(remove_dups.values())
+                start,
+                end,
+                labels))
+    episode_list = remove_duplicates(episode_list)
+    episode_list = [ [ ep, str(s), str(e), ','.join([ str(l) for l in ls ]) ] for ep, s, e, ls in episode_list ]
     episode_list = sorted(episode_list, key=lambda l: int(l[1]))
     episode_list = [ '\t'.join(l) for l in episode_list ]
     return episode_list
@@ -173,6 +186,7 @@ def get_episode_list(season, episode):
 
 if __name__ == "__main__":
     # Train & Test
+    print("Generating a training and a test list...")
     total_list = get_total_list()
     train_list, test_list = split_list(total_list)
 
@@ -182,11 +196,16 @@ if __name__ == "__main__":
         fout.write('\n'.join(test_list))
 
     # Episodes
+    pbar = tqdm(total=sum([ len(episodes) for episodes in C.episodes_list ]))
     for season, episodes in zip(C.seasons, C.episodes_list):
         for episode in episodes:
+            pbar.set_description("Generating a list from S{:02d}_EP{:02d}...".format(season, episode))
+
             episode_list = get_episode_list(season, episode)
 
             episode_list_fpath = C.list_fpath_tpl.format(season, episode)
             with open(episode_list_fpath, 'w') as fout:
                 fout.write('\n'.join(episode_list))
+
+            pbar.update(1)
 
