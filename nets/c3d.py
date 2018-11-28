@@ -33,7 +33,7 @@ def conv3d(name, l_input, w, b):
 def max_pool(name, l_input, k):
     return tf.nn.max_pool3d(l_input, ksize=[1, k, 2, 2, 1], strides=[1, k, 2, 2, 1], padding='SAME', name=name)
 
-def inference_c3d(_X, _dropout, batch_size, _weights, _biases):
+def inference(_X, _dropout, batch_size, _weights, _biases):
 
     # Convolution Layer
     conv1 = conv3d('conv1', _X, _weights['wc1'], _biases['bc1'])

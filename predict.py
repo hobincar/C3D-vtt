@@ -1,8 +1,5 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import json
+import jsonlines
 import os
 import time
 
@@ -10,7 +7,7 @@ import tensorflow as tf
 from tqdm import tqdm
 import numpy as np
 
-import c3d_model
+from nets import c3d as model
 from config import PredConfig as C
 from dataset import load_train_dataset, load_test_dataset
 
@@ -22,21 +19,6 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 
 
 def placeholder_inputs():
-    """Generate placeholder variables to represent the input tensors.
-
-    These placeholders are used as inputs by the rest of the model building
-    code and will be fed from the downloaded data in the .run() loop, below.
-
-    Args:
-        batch_size: The batch size will be baked into both placeholders.
-
-    Returns:
-        images_placeholder: Images placeholder.
-        labels_placeholder: Labels placeholder.
-    """
-    # Note that the shapes of the placeholders match the shapes of the full
-    # image and label tensors, except the first dimension is now batch_size
-    # rather than the full size of the train or test data sets.
     images_placeholder = tf.placeholder(tf.float32, shape=(
         N_GPU * C.batch_size,
         C.n_frames_per_clip,
@@ -59,6 +41,47 @@ def _variable_with_weight_decay(name, shape, stddev, wd):
         weight_decay = tf.nn.l2_loss(var) * wd
         tf.add_to_collection('losses', weight_decay)
     return var
+
+
+def build_result_for_demo(frame, labels, topk_idx, topk_score):
+    ground_truths = np.where(labels == 1)[0]
+    ground_truths = [ C.idx2rep[str(idx)] for idx in ground_truths ]
+
+    actions = []
+    for idx, score in zip(topk_idx, topk_score):
+        action = C.idx2rep[str(idx)]
+        actions.append(( action, score ))
+
+    result = {
+        "frame": frame,
+        "ground_truths": ground_truths,
+        "actions": actions,
+    }
+    return result
+
+
+def build_results_for_integration(frame, labels, topk_idx, topk_score):
+    results = []
+    for idx, score in zip(topk_idx, topk_score):
+        if score < 0.5: continue
+
+        result = {
+            "type": "behavior",
+            "class": C.idx2rep[str(idx)],
+            "seconds": frame / C.fps_used_to_extract_frames,
+            "object": {},
+        }
+        results.append(result)
+
+    if len(results) == 0:
+        result = {
+            "type": "behavior",
+            "class": C.idx2rep[str(topk_idx[0])],
+            "seconds": frame / C.fps_used_to_extract_frames,
+            "object": {},
+        }
+
+    return results
 
 
 def run_test():
@@ -94,7 +117,7 @@ def run_test():
     logits = []
     for i, gpu_index in enumerate(GPU_LIST):
         with tf.device('/gpu:%d' % gpu_index):
-            logit, _ = c3d_model.inference_c3d(
+            logit, _ = model.inference(
                 images_placeholder[i * C.batch_size:(i + 1) * C.batch_size,:,:,:,:],
                 1.,
                 C.batch_size,
@@ -115,13 +138,16 @@ def run_test():
     saver.restore(sess, C.model_fpath)
 
     os.makedirs(C.prediction_dpath, exist_ok=True)
+    os.makedirs(C.integration_dpath, exist_ok=True)
+
     pbar = tqdm(total=sum([ len(episodes) for episodes in C.episodes_list ]))
     for season, episodes in zip(C.seasons, C.episodes_list):
         for episode in episodes:
             pbar.set_description("Generating prediction results of S{:02d}_EP{:02d}...".format(season, episode))
 
             list_file_fpath = C.list_fpath_tpl.format(season, episode)
-            results = []
+            demo_results = []
+            integration_results = []
     
             # Load train dataset
             dataset = load_test_dataset(list_file_fpath, N_GPU * C.batch_size, shuffle=False, repeat=False)
@@ -144,29 +170,27 @@ def run_test():
                 topk_scores = np.take(predict_scores, topk_idxs)
                 topk_scores = topk_scores.tolist()
                 for frame, labels, topk_idx, topk_score in zip(frames, labels, topk_idxs, topk_scores):
-                    ground_truths = np.where(labels == 1)[0]
-                    ground_truths = [ C.idx2rep[str(idx)] for idx in ground_truths ]
-    
-                    result = {}
-                    result["frame"] = frame
-                    result["seconds"] = frame / C.fps_used_to_extract_frames
-                    result["ground_truths"] = ground_truths
-                    actions = []
-                    for idx, score in zip(topk_idx, topk_score):
-                        action = C.idx2rep[str(idx)]
-                        actions.append(( action, score ))
-                    result["actions"] = actions
-    
-                    results.append(result)
+                    result1 = build_result_for_demo(frame, labels, topk_idx, topk_score)
+                    demo_results.append(result1)
+
+                    result2 = build_results_for_integration(frame, labels, topk_idx, topk_score)
+                    integration_results += result2
+
+            # For demo videos
             episode_id = "S{:02d}_EP{:02d}".format(season, episode)
             result = {
                 "file_name": "{}.json".format(episode_id),
                 "registed_name": "{}.json".format(episode_id),
-                "prediction_results": results,
+                "prediction_results": demo_results,
             }
             result_fpath = C.prediction_fpath_tpl.format(season, episode)
             with open(result_fpath, 'w') as fout:
                 json.dump(result, fout, indent=2, sort_keys=True)
+
+            # For integration
+            integration_fpath = C.integration_fpath_tpl.format(season, episode)
+            with jsonlines.open(integration_fpath, mode='w') as writer:
+                writer.write_all(integration_results)
 
             pbar.update(1)
     

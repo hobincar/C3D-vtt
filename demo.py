@@ -7,10 +7,12 @@ from tqdm import tqdm
 from config import DemoConfig as C
 
 
-def generate_frame(season, episode, frame_number, ground_truths, actions, pane_width):
+def load_frame(season, episode, frame_number):
     frame_fpath = C.frame_fpath_tpl.format(season, episode, frame_number)
     frame = cv2.imread(frame_fpath)
+    return frame
 
+def generate_frame(frame, ground_truths, actions, pane_width):
     h, w, c = frame.shape
 
     pane_width = 1000
@@ -82,8 +84,9 @@ def generate_demo(season, episode):
         frame_number = pred["frame"]
         ground_truths = pred["ground_truths"]
         actions = pred["actions"]
-        
-        frame = generate_frame(season, episode, frame_number, ground_truths, actions, pane_width)
+
+        frame = load_frame(season, episode, frame_number)
+        frame = generate_frame(frame, ground_truths, actions, pane_width)
         vout.write(frame)
     vout.release()
 

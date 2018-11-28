@@ -30,12 +30,14 @@ class CommonConfig:
     model_root_dpath = "models"
     output_root_dpath = "outputs"
     prediction_dpath = os.path.join(output_root_dpath, "predictions")
+    integration_dpath = os.path.join(output_root_dpath, "integration", "data", "friends")
     demo_dpath = os.path.join(output_root_dpath, "demos")
 
     frame_fpath_tpl = "data/friends_trimmed/frames/S{:02d}_EP{:02d}/{:05d}.jpg"
     annotation_fpath_tpl = "data/friends_trimmed/annotations/S{:02d}_EP{:02d}.json"
     list_fpath_tpl = "list/friends_S{:02d}_EP{:02d}.list"
     prediction_fpath_tpl = os.path.join(prediction_dpath, "S{:02d}_EP{:02d}.json")
+    integration_fpath_tpl = os.path.join(integration_dpath, "friends_s{:02d}_e{:02d}.jsonl")
     demo_fpath_tpl = os.path.join(demo_dpath, "S{:02d}_EP{:02d}.mp4")
 
     train_data_fpath = "list/friends_train.list"
@@ -51,7 +53,7 @@ class CommonConfig:
     actions = list(idx2rep.values())
     action_labels = list(idx2rep.keys())
 
-    fps_used_to_extract_frames = 5.07
+    fps_used_to_extract_frames = 5.01
     n_frames_per_clip = 16
     train_ratio = 0.7
 
@@ -62,9 +64,9 @@ class CommonConfig:
     crop_size = 112
     n_channels = 3
 
-
     class_weights = weight_classes(train_data_fpath, n_actions) 
 
+    topk = 5
 
 
 class ListConfig(CommonConfig):
@@ -75,7 +77,7 @@ class ListConfig(CommonConfig):
 class TrainConfig(CommonConfig):
     n_workers = 4
 
-    use_pretrained_model = True
+    use_pretrained_model = False
     if use_pretrained_model:
         pretrained_model_dpath = "pretrained_models"
         pretrained_model_name = "sports1m_finetuning_ucf101"
@@ -103,10 +105,8 @@ class TrainConfig(CommonConfig):
 
 class PredConfig(CommonConfig):
     model_name = "C3D | lr-st-1e-05-fn-0.0001 | pt-None | 181126-13:22:31"
-    n_iterations = 40000
+    n_iterations = 50000
     model_fpath = os.path.join(CommonConfig.model_root_dpath, model_name, "model-{}".format(n_iterations))
-
-    topk = 5
 
 
 class DemoConfig(CommonConfig):

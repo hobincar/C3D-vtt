@@ -5,9 +5,10 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
-import c3d_model
+from nets import c3d as network
 from config import TrainConfig as C
 from dataset import load_train_dataset, load_test_dataset
+from demo import generate_frame
 from logger import Logger
 
 
@@ -16,29 +17,11 @@ GPU_LIST = [ int(i) for i in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
 N_GPU = len(GPU_LIST)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 
-
-with open('data/idx2rep.json', 'r') as fin:
-    idx2rep = json.load(fin)
-
+# A custom logger is introduced to log gifs
 summary_writer = Logger(C.log_dpath, max_queue=100)
 
 
 def placeholder_inputs():
-    """Generate placeholder variables to represent the input tensors.
-
-    These placeholders are used as inputs by the rest of the model building
-    code and will be fed from the downloaded data in the .run() loop, below.
-
-    Args:
-        batch_size: The batch size will be baked into both placeholders.
-
-    Returns:
-        images_placeholder: Images placeholder.
-        labels_placeholder: Labels placeholder.
-    """
-    # Note that the shapes of the placeholders match the shapes of the full
-    # image and label tensors, except the first dimension is now batch_size
-    # rather than the full size of the train or test data sets.
     images_placeholder = tf.placeholder(tf.float32, shape=(
         N_GPU * C.batch_size,
         C.n_frames_per_clip,
@@ -117,6 +100,7 @@ def _variable_with_weight_decay(name, shape, wd):
         tf.add_to_collection('weightdecay_losses', weight_decay)
     return var
 
+
 def pred_real_to_table(preds, reals, prefix=""):
     TOP_K = 3
     lines = [
@@ -131,39 +115,24 @@ def pred_real_to_table(preds, reals, prefix=""):
         lines.append([ real_label_indices, pred_label_indices ])
     return lines
 
+
 def clip_summary_with_text(clip, actual, pred):
-    TEXT_HEIGHT = 25
-    TEXT_WIDTH = 50
-    padded_clip = np.pad(
-        clip,
-        pad_width=((0,0), (TEXT_HEIGHT,0), (TEXT_WIDTH//2,TEXT_WIDTH//2), (0,0)),
-        mode="constant",
-        constant_values=0)
     actual_labels = np.where(actual == 1)[0]
-    pred = np.exp(pred) / sum(np.exp(pred))
-    pred_labels = np.where(pred > 0.5)[0]
-    if len(pred_labels) == 0:
-        pred_labels =  [ np.argmax(pred) ]
-    for frame in padded_clip:
-        actual_actions = [idx2rep[str(a)] for a in actual_labels]
-        cv2.putText(
-            frame,
-            "actual: {}".format(", ".join(actual_actions)),
-            (0, (TEXT_HEIGHT - 5) // 2),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.3,
-            (255, 255, 255)
-        )
-        pred_actions = [idx2rep[str(p)] for p in pred_labels]
-        cv2.putText(
-            frame,
-            "pred: {}".format(", ".join(pred_actions)),
-            (0, TEXT_HEIGHT - 5),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.3,
-            (255, 255, 255)
-        )
-    return padded_clip
+    ground_truths = [ C.idx2rep[str(a)] for a in actual_labels ]
+
+    predict_scores = np.exp(pred) / sum(np.exp(pred))
+    topk_idxs = np.argsort(predict_scores)[-C.topk:]
+    topk_actions = [ C.idx2rep[str(idx)] for idx in topk_idxs ]
+    topk_scores = predict_scores[topk_idxs]
+    actions = [ (action, score) for action, score in zip(topk_actions, topk_scores) ]
+
+    new_clip = []
+    for frame in clip:
+        new_frame = cv2.resize(frame, dsize=(1280, 720), interpolation=cv2.INTER_AREA)
+        new_frame = generate_frame(new_frame, ground_truths, actions, pane_width=1000)
+        new_clip.append(new_frame)
+    new_clip = np.asarray(new_clip)
+    return new_clip
 
 
 def train_log(clips, preds, gts, step):
@@ -210,7 +179,7 @@ def build_train_model(weights, biases):
         with tf.device('/gpu:%d' % gpu_index):
             varlist_finetune = [ weights['out'], biases['out'] ]
             varlist_stable = list( set(list(weights.values()) + list(biases.values())) - set(varlist_finetune) )
-            logit, _ = c3d_model.inference_c3d(
+            logit, _ = network.inference(
                 _X=images_placeholder[i * C.batch_size:(i + 1) * C.batch_size, :, :, :, :],
                 _dropout=0.5,
                 batch_size=C.batch_size,
@@ -252,7 +221,7 @@ def build_test_model(weights, biases):
     logits = []
     for i, gpu_index in enumerate(GPU_LIST):
         with tf.device('/gpu:%d' % gpu_index):
-            logit, _ = c3d_model.inference_c3d(
+            logit, _ = network.inference(
                 _X=images_placeholder[i * C.batch_size:(i + 1) * C.batch_size, :, :, :, :],
                 _dropout=1,
                 batch_size=C.batch_size,
@@ -370,7 +339,7 @@ def run_training():
 
             # Log test
             if step % C.test_log_every == 0:
-                test_clips, test_labels, _ = sess.run(test_next_batch)
+                test_clips, test_labels, test_frames = sess.run(test_next_batch)
                 preds, acc, loss_val = sess.run(
                     [test_model["logits"], test_model["accuracy"], test_model["loss"]],
                     feed_dict={
