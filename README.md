@@ -1,9 +1,48 @@
-# C3D-tensorflow
+# VTT-action-recognition
 
-This is a repository trying to implement [C3D-caffe][5] on tensorflow,useing models directly converted from original C3D-caffe.    
-Be aware that there are about 5% video-level accuracy margin on UCF101 split1  between our implement in tensorflow and  the original C3D-caffe.  
+This project tries to recognize actions occuring in the American television sitcom, *Friends*. Original code is from [C3D-tensorflow](https://github.com/hx173149/C3D-tensorflow), and I modified it for this project.
 
-## Requirements:
+And I borrowed some codes which implement following networks
+
+* [C3D](https://www.cv-foundation.org/openaccess/content_iccv_2015/papers/Tran_Learning_Spatiotemporal_Features_ICCV_2015_paper.pdf) from [C3D-tensorflow](https://github.com/hx173149/C3D-tensorflow) by [hx173149](https://github.com/hx173149)
+
+
+## Requirements
+
+* Ubuntu 16.04
+* CUDA 9.0
+* cuDNN 7.3.1
+* Python 3.6
+* Python libraries listed on requirements.txt (including tensorflow 1.12.0)
+
+
+## Step 1. Preparing Data
+
+For this project, you need to have following two data.
+* Frames of each *Friends* video
+  1. Download *Friends* videos.
+  2. Extract frames from each video on 5 fps, and locate them on 
+  `<project_root>/data/friends_trimmed/frames/S<season>_EP<episode>/<frame_number>.jpg`
+    e.g. `<project_root>/data/friends_trimmed/frames/S01_EP01/00001.jpg`
+
+* Annotations
+  1. Download two annotation files we got from Konan Technology
+     * `VTT3_2차년도_메타데이터1차_배포_20180809.zip`
+     * `20181024_VTT3세부_메타데이터_2차배포.zip`
+  2. Extract following json files 
+     * `s<season>_ep<episode>_tag2_visual_Final_180809.json` from `VTT3_2차년도_메타데이터1차_배포_20180809.zip`
+     * `s<season>_ep<episode>_tag2_visual_final.json` from `20181024_VTT3세부_메타데이터_2차배포.zip`
+     and locate the json files on the following directory
+     `<project_root>/data/friends_trimmed/annotations`
+
+
+## Step 2. Analyzing Data
+
+## Step 3. Splitting Train & Test dataset
+
+## Step 4. Train
+
+## Step 5. Predict & Demo
 
 1. Have installed the tensorflow >= 1.2 version
 2. You must have installed the following two python libs:
