@@ -168,7 +168,13 @@ $ CUDA_VISIBLE_DEVICES=0 python train.py
   ```
   
   It will generate **demo videos** in `<project root>/outputs/demo" for each *friends* episode.
-  
+
+
 # References
 
 * Tran, Du, et al. "Learning spatiotemporal features with 3d convolutional networks." Proceedings of the IEEE international conference on computer vision. 2015.
+
+
+# Acknowledgements
+
+This work was supported by Institute for Information & communications Technology Promotion(IITP) grant funded by the Korea government(MSIT) (2017-0-01780, The technology development for event recognition/relational reasoning and learning knowledge based system for video understanding)
