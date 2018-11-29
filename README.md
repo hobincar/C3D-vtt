@@ -147,9 +147,9 @@ $ CUDA_VISIBLE_DEVICES=0 python train.py
   
   | Base model | Precision | Recall | F1 score |
   | :---: | :----: | :---: | :---: |
-  | C3D | 0.7291 | 0.7362 | 0.7325 |
+  | C3D | 0.5455 | 0.5162 | 0.5299 |
   
-  ![image](https://user-images.githubusercontent.com/17702664/49164988-8f8d7080-f373-11e8-87ce-335ff8bc52e3.png)
+  ![image](https://user-images.githubusercontent.com/17702664/49209459-e2ac0580-f3fd-11e8-9b5a-39d6a85aac88.png)
 
 ## Step 6. Predict & Demo
 
