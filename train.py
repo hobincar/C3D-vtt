@@ -69,7 +69,7 @@ def tower_acc(logits, labels):
     return accuracy
 
 
-def calc_metrics(preds, actuals):
+def score(preds, actuals):
     preds = (preds > 0.5).astype(np.bool)
     actuals = actuals.astype(np.bool)
 
@@ -102,7 +102,6 @@ def _variable_with_weight_decay(name, shape, wd):
 
 
 def pred_real_to_table(preds, reals, prefix=""):
-    TOP_K = 3
     lines = [
         [ "real", "pred" ],
     ]
@@ -110,7 +109,7 @@ def pred_real_to_table(preds, reals, prefix=""):
         real_label_indices = np.where(real == 1)[0]
         real_label_indices = ", ".join([ str(i) for i in real_label_indices ])
         pred_sigmoid = 1 / (1 + np.exp(-pred))
-        pred_label_indices = np.argsort(-pred)[:TOP_K]
+        pred_label_indices = np.argsort(-pred)[:C.topk]
         pred_label_indices = ", ".join([ "{}({:.2f})".format(i, pred_sigmoid[i]) for i in pred_label_indices ])
         lines.append([ real_label_indices, pred_label_indices ])
     return lines
@@ -136,7 +135,7 @@ def clip_summary_with_text(clip, actual, pred):
 
 
 def train_log(clips, preds, gts, step):
-    precision, recall, f1score = calc_metrics(preds, gts)
+    precision, recall, f1score = score(preds, gts)
     pred_summary = pred_real_to_table(preds, gts)
     gif_summary = clip_summary_with_text(clips[0], gts[0], preds[0])
     summary_writer.scalar("train/precision", precision, step)
@@ -148,7 +147,7 @@ def train_log(clips, preds, gts, step):
 
 
 def test_log(clips, preds, gts, step):
-    precision, recall, f1score = calc_metrics(preds, gts)
+    precision, recall, f1score = score(preds, gts)
     pred_summary = pred_real_to_table(preds, gts)
     gif_summary = clip_summary_with_text(clips[0], gts[0], preds[0])
     summary_writer.scalar("test/precision", precision, step)
