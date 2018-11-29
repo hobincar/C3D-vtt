@@ -69,7 +69,7 @@ def build_results_for_integration(frame, labels, topk_idx, topk_score):
             "type": "behavior",
             "class": C.idx2rep[str(idx)],
             "seconds": frame / C.fps_used_to_extract_frames,
-            "object": {},
+            "object": { "coordinates": [ 0, 0, 1280, 720 ] },
         }
         results.append(result)
 
@@ -78,7 +78,7 @@ def build_results_for_integration(frame, labels, topk_idx, topk_score):
             "type": "behavior",
             "class": C.idx2rep[str(topk_idx[0])],
             "seconds": frame / C.fps_used_to_extract_frames,
-            "object": {},
+            "object": { "coordinates": [ 0, 0, 1280, 720 ] },
         }
 
     return results

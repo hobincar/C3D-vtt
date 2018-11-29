@@ -8,3 +8,6 @@ models
 .ipynb_checkpoints
 outputs/demos
 pretrained_models
+outputs
+list
+logs*
